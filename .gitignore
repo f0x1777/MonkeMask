@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Model caches (downloaded weights, mediapipe, dlib, insightface)
+.cache/
+models/
+
+# Project data and assets (large binaries — external inputs, not source)
+/Argentina Monkes/
+/OurMonke/
+/Photos/
+/faces/
+/output/
+/.monke-cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
