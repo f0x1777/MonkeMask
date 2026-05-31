@@ -118,11 +118,15 @@ tests/
 
 ### 6.2 detector.py
 
-- Wraps MediaPipe Face Detection (model: short-range or full-range depending on
-  photo). Returns one `FaceRegion` per detected face above a confidence threshold.
-- Provides `left_eye` / `right_eye` keypoints used to compute roll.
-- Behind a small interface so it can be swapped (e.g., OpenCV DNN, RetinaFace)
-  and mocked in tests.
+- Wraps the OpenCV **YuNet** face detector (small ONNX model, robust across face
+  sizes — important for group photos at a distance). Returns one `FaceRegion` per
+  detected face above a confidence threshold.
+- Provides `left_eye` / `right_eye` keypoints (from YuNet's 5 landmarks) used to
+  compute roll.
+- Behind a small interface so it can be swapped (e.g., RetinaFace, MediaPipe) and
+  mocked in tests. Note: MediaPipe BlazeFace short-range was tried first but
+  detected 0 faces on the group test photo (it targets close-up faces); YuNet
+  handles the distance range we need.
 
 ### 6.3 background.py — monke background removal (tiered)
 
@@ -226,7 +230,7 @@ monkepic [INPUT] [options]
 
 ## 9. Dependencies (Phase 1)
 
-- `mediapipe` (face detection + eye keypoints)
+- `opencv-python` (YuNet face detection + eye keypoints)
 - `Pillow` + `pillow-heif` (or `pillow-avif-plugin`) for AVIF/WebP I/O
 - `numpy`
 - `rembg` (U²-Net) — ML fallback for complex monke backgrounds (tier 3, §6.3).
@@ -278,6 +282,6 @@ monkepic [INPUT] [options]
 ## 12. Open decisions (defaults chosen; override on review)
 
 - Web UI tech: **Gradio** (Phase 2 default). — confirm when Phase 2 starts.
-- Detector model: MediaPipe short-range first; add full-range fallback if group
-  photos miss small/distant faces.
+- Detector: OpenCV YuNet (chosen after MediaPipe short-range found 0 faces on the
+  group photo). Lower `--min-confidence` to catch missed small/profile faces.
 - Head-box margin default (~0.4) to be tuned against the MiniGolf photo.

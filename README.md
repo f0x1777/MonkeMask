@@ -30,7 +30,7 @@ folder. Over a few events this builds the recognition dataset for Phase 3
 
 ## How it works (Phase 1)
 
-1. Detect every face (MediaPipe) → bounding box + eye keypoints.
+1. Detect every face (OpenCV YuNet) → bounding box + eye keypoints.
 2. Pick a monke per face (random, no repeats within a photo).
 3. Remove the monke's background — tiered: existing alpha → solid-color cutout →
    `rembg` ML fallback for complex backgrounds (cached in `.monke-cache/`).
