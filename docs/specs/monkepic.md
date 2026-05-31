@@ -124,18 +124,28 @@ tests/
 - Behind a small interface so it can be swapped (e.g., OpenCV DNN, RetinaFace)
   and mocked in tests.
 
-### 6.3 background.py
+### 6.3 background.py — monke background removal (tiered)
 
-- `ensure_transparent(img) -> RGBA`:
-  - If the image already has a meaningful alpha channel → return as-is (converted
-    to RGBA). (AC: existing alpha is preserved.)
-  - Else → solid-background removal: sample the four corners, take the median as
-    the background color, flood-fill from the borders within a color tolerance,
-    set those pixels to alpha 0, lightly feather the edge. (SMB monkes have flat
-    backgrounds, so this is robust and dependency-light.)
-  - Results cached to `.monke-cache/` keyed by a content hash of the source.
-- `rembg` (U²-Net) is an optional, heavier fallback for non-solid backgrounds —
-  out of scope for Phase 1, noted for the future.
+Removes the **monke image's** background so it composites cleanly (this is NOT
+the photo's background, which is never touched). `ensure_transparent(img) -> RGBA`
+runs a cascade and stops at the first tier that succeeds:
+
+1. **Alpha present** → if the image already has a meaningful alpha channel, return
+   as-is (converted to RGBA). Many SMB PNGs are already transparent. (AC5)
+2. **Solid background** → sample the four corners; if they agree within a tolerance
+   (flat background), take the median as the background color, flood-fill from the
+   borders within tolerance, set those pixels to alpha 0, lightly feather the edge.
+   Fast, deterministic, no ML. Covers the typical SMB case. (AC4)
+3. **Complex background fallback** → if corners disagree (no flat background) or the
+   solid-color cut leaves too much/too little, fall back to **`rembg` (U²-Net, a
+   local ML model)** to segment the subject. Handles AVIF/WebP monkes with
+   gradient/noisy edges. Model weights download once and run fully offline. (AC12)
+
+- The chosen tier is logged so results are explainable.
+- Every result is cached to `.monke-cache/` keyed by a content hash of the source
+  image, so each monke's background is removed once, not once per run.
+- `is_solid_background(img) -> bool` and the tier functions are individually
+  unit-testable with synthetic images (flat-bg, alpha, gradient-bg).
 
 ### 6.4 geometry.py (pure)
 
@@ -219,6 +229,8 @@ monkepic [INPUT] [options]
 - `mediapipe` (face detection + eye keypoints)
 - `Pillow` + `pillow-heif` (or `pillow-avif-plugin`) for AVIF/WebP I/O
 - `numpy`
+- `rembg` (U²-Net) — ML fallback for complex monke backgrounds (tier 3, §6.3).
+  Local/offline after one-time weights download.
 - `pytest` (dev), `ruff` (lint), TDD throughout
 - Packaging/env: `uv` + `pyproject.toml`
 - Phase 2: `gradio`. Phase 3: `face_recognition` (dlib) or `insightface`.
@@ -232,8 +244,12 @@ monkepic [INPUT] [options]
 - AC3. The monke is scaled to cover the head box (face bbox expanded by the margin),
   preserving the monke's aspect ratio (geometry unit test).
 - AC4. A monke with a solid background and no alpha yields a cutout with
-  transparent border/corners (background unit test).
+  transparent border/corners via the solid-color tier (background unit test).
 - AC5. A monke that already has alpha is used unchanged (background unit test).
+- AC12. A monke with a non-solid/gradient background (corners disagree) is routed
+  to the `rembg` ML fallback and yields a transparent-background cutout; the
+  selected tier is reported (background unit test; rembg may be mocked to keep the
+  test fast, with one non-mocked smoke test).
 - AC6. With multiple faces, all are covered (pipeline test, detector mocked to
   return 3 regions → 3 composites).
 - AC7. Selection is non-repeating within a photo when pool ≥ faces, and falls back
@@ -250,7 +266,8 @@ monkepic [INPUT] [options]
 ## 11. Testing strategy
 
 - **Unit (pure):** geometry (roll, head-box, sizing), selector (seeded), background
-  (synthetic solid-bg image + synthetic alpha image), crops naming.
+  tiers (synthetic solid-bg, synthetic alpha, synthetic gradient-bg → rembg
+  fallback, mocked), crops naming.
 - **Integration:** pipeline with the detector mocked to return fixed regions, so
   composition logic is tested without depending on the ML model; assert outputs
   are written and the right number of composites happened.
