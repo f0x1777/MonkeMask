@@ -283,6 +283,10 @@ monkepic [INPUT] [options]
 
 - Web UI tech: **Gradio** (Phase 2 default). — confirm when Phase 2 starts.
 - Detector: OpenCV YuNet (chosen after MediaPipe short-range found 0 faces on the
-  group photo). Lower `--min-confidence` to catch missed small/profile faces.
+  group photo), run at multiple resolutions (2560/1600/1280/1024/800 longest side)
+  and unioned by IoU — no single resolution catches both very large and small
+  faces. Coverage is still not guaranteed 100% on hard low-light/profile photos;
+  lower `--min-confidence` or touch up by hand. A future detector swap (RetinaFace)
+  is the path to higher recall.
 - Head-box margin default 1.0 (monke ≈ 2× the detected face box) to ensure the
   whole head is covered; tune with `--margin`.

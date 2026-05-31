@@ -1,6 +1,12 @@
 import math
 
-from monkepic.geometry import eye_roll, head_box, monke_target_size, roll_degrees
+from monkepic.geometry import (
+    eye_roll,
+    head_box,
+    iou,
+    monke_target_size,
+    roll_degrees,
+)
 
 
 def test_level_eyes_zero_roll():
@@ -37,3 +43,16 @@ def test_target_size_square_cover():
 
 def test_target_size_preserves_aspect_and_covers():
     assert monke_target_size(140, 140, 200, 100) == (280, 140)
+
+
+def test_iou_identical_is_one():
+    assert iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
+
+
+def test_iou_disjoint_is_zero():
+    assert iou((0, 0, 10, 10), (100, 100, 10, 10)) == 0.0
+
+
+def test_iou_half_overlap():
+    # two 10x10 boxes overlapping in a 5x10 strip: inter=50, union=150
+    assert math.isclose(iou((0, 0, 10, 10), (5, 0, 10, 10)), 50 / 150)

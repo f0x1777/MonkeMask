@@ -74,8 +74,11 @@ The result is written to `output/<name>-monked.png`.
 | `--seed INT` | — | Fix the random monke selection (reproducible results). |
 | `--min-confidence FLOAT` | `0.6` | Detection threshold. Lower it if a face is missed. |
 
-> **Tip:** if a face in a group shot is missed (profile, far away), lower
-> `--min-confidence` (e.g. `0.4`).
+> **Coverage is not guaranteed to be 100%.** On hard photos (low light, faces in
+> profile or partly hidden) the detector can miss a face. Always eyeball the
+> result before sharing. If a face is missed, lower `--min-confidence` (e.g. `0.4`)
+> and re-run; if it's still missed, cover that one by hand. This matters — a missed
+> face defeats the privacy purpose.
 
 ---
 
@@ -91,9 +94,10 @@ photo ──▶ detect faces ──▶ for each face:
           ──▶ output/<name>-monked.png
 ```
 
-1. **Detect faces** — OpenCV [YuNet](https://github.com/opencv/opencv_zoo), which
-   handles faces at varied sizes and distances (good for group photos) and gives
-   eye keypoints.
+1. **Detect faces** — OpenCV [YuNet](https://github.com/opencv/opencv_zoo) run at
+   several resolutions and unioned (no single resolution catches both very large
+   and small faces); gives eye keypoints for the tilt. Not guaranteed 100% on hard
+   photos — eyeball the result.
 2. **Remove the monke's background** — a tiered cascade, picking the cheapest tier
    that works, cached so each monke is processed once:
    - already-transparent PNG → used as-is;

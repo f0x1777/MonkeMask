@@ -37,3 +37,17 @@ def monke_target_size(
     """Size the monke to fully COVER the box while preserving its aspect ratio."""
     scale = max(box_w / monke_w, box_h / monke_h)
     return round(monke_w * scale), round(monke_h * scale)
+
+
+def iou(
+    box_a: tuple[float, float, float, float],
+    box_b: tuple[float, float, float, float],
+) -> float:
+    """Intersection-over-union of two (x, y, w, h) boxes. 0 = disjoint, 1 = identical."""
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+    ix = max(0.0, min(ax + aw, bx + bw) - max(ax, bx))
+    iy = max(0.0, min(ay + ah, by + bh) - max(ay, by))
+    inter = ix * iy
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
