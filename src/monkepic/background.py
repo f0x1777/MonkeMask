@@ -60,7 +60,8 @@ def solid_cutout(img: Image.Image, tol: int = 25) -> Image.Image:
 
 def ml_cutout(img: Image.Image, rembg_fn) -> Image.Image:
     """Tier 3: delegate to an ML segmenter (rembg.remove) for complex backgrounds."""
-    return rembg_fn(img).convert("RGBA")
+    result = rembg_fn(img)
+    return result if result.mode == "RGBA" else result.convert("RGBA")
 
 
 def _default_rembg(image: Image.Image) -> Image.Image:
