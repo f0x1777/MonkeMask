@@ -284,4 +284,5 @@ monkepic [INPUT] [options]
 - Web UI tech: **Gradio** (Phase 2 default). — confirm when Phase 2 starts.
 - Detector: OpenCV YuNet (chosen after MediaPipe short-range found 0 faces on the
   group photo). Lower `--min-confidence` to catch missed small/profile faces.
-- Head-box margin default (~0.4) to be tuned against the MiniGolf photo.
+- Head-box margin default 1.0 (monke ≈ 2× the detected face box) to ensure the
+  whole head is covered; tune with `--margin`.

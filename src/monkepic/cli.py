@@ -14,7 +14,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monkes", default="Argentina Monkes", help="monke pool directory")
     p.add_argument("--monke", default=None, help="force one specific monke for all faces")
     p.add_argument("--out", default="output", help="output directory")
-    p.add_argument("--margin", type=float, default=0.4, help="head-box margin")
+    p.add_argument(
+        "--margin",
+        type=float,
+        default=1.0,
+        help="how much bigger than the detected face the monke is (1.0 = ~2x the face box)",
+    )
     p.add_argument("--no-rotate", action="store_true", help="disable 2D roll")
     p.add_argument(
         "--export-crops",

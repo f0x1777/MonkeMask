@@ -18,7 +18,7 @@ def process_image(
     out_dir,
     detector,
     *,
-    margin: float = 0.4,
+    margin: float = 1.0,
     rotate: bool = True,
     seed: int | None = None,
     crops_dir=None,
@@ -53,7 +53,7 @@ def process_image(
         monke = ensure_transparent(load_image(monke_path))
         cx, cy, bw, bh = geometry.head_box(region.x, region.y, region.w, region.h, margin)
         tw, th = geometry.monke_target_size(bw, bh, monke.width, monke.height)
-        roll = geometry.roll_degrees(region.left_eye, region.right_eye) if rotate else 0.0
+        roll = geometry.eye_roll(region.left_eye, region.right_eye) if rotate else 0.0
         canvas = composite(canvas, monke, Placement(cx, cy, tw, th, roll))
 
     save_image(canvas, out_path)

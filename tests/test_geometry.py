@@ -1,6 +1,6 @@
 import math
 
-from monkepic.geometry import head_box, monke_target_size, roll_degrees
+from monkepic.geometry import eye_roll, head_box, monke_target_size, roll_degrees
 
 
 def test_level_eyes_zero_roll():
@@ -13,6 +13,16 @@ def test_tilted_eyes_positive_roll():
 
 def test_tilted_eyes_negative_roll():
     assert math.isclose(roll_degrees((0.0, 0.0), (10.0, -10.0)), -45.0)
+
+
+def test_eye_roll_upright_when_eyes_swapped():
+    # subject-left eye is at larger image-x than subject-right eye -> still upright
+    assert eye_roll((10.0, 0.0), (0.0, 0.0)) == 0.0
+
+
+def test_eye_roll_is_order_independent():
+    assert math.isclose(eye_roll((0.0, 0.0), (10.0, 10.0)), 45.0)
+    assert math.isclose(eye_roll((10.0, 10.0), (0.0, 0.0)), 45.0)
 
 
 def test_head_box_expands_around_center():

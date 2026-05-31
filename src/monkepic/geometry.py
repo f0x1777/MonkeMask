@@ -4,10 +4,19 @@ import math
 
 
 def roll_degrees(left_eye: tuple[float, float], right_eye: tuple[float, float]) -> float:
-    """Angle (degrees) of the eye line vs horizontal. 0 = level, +ve = right eye lower."""
+    """Angle (degrees) of the eye line vs horizontal, where ``left_eye`` is the
+    left-most point in the image. 0 = level, +ve = right point lower."""
     dx = right_eye[0] - left_eye[0]
     dy = right_eye[1] - left_eye[1]
     return math.degrees(math.atan2(dy, dx))
+
+
+def eye_roll(eye_a: tuple[float, float], eye_b: tuple[float, float]) -> float:
+    """Head-tilt roll from two eye points, independent of which one is the subject's
+    left/right eye. Orders the points by image-x first, so an upright face yields
+    ~0 (not 180). Assumes the head tilt is under 90 degrees."""
+    left, right = sorted((eye_a, eye_b), key=lambda p: p[0])
+    return roll_degrees(left, right)
 
 
 def head_box(

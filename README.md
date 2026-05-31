@@ -68,7 +68,7 @@ The result is written to `output/<name>-monked.png`.
 | `--monkes DIR` | `Argentina Monkes` | Folder of monke images to pick from (png/jpg/webp/avif). |
 | `--monke FILE` | — | Use one specific monke for every face (overrides `--monkes`). |
 | `--out DIR` | `output` | Where results are written. |
-| `--margin FLOAT` | `0.4` | How much around the face the monke covers (higher = more of the head). |
+| `--margin FLOAT` | `1.0` | How much bigger than the detected face the monke is (`1.0` ≈ 2× the face box, so the whole head is covered). |
 | `--no-rotate` | off | Disable 2D rotation (monkes stay upright). |
 | `--export-crops DIR` | — | Also save a crop of each detected face to this folder. |
 | `--seed INT` | — | Fix the random monke selection (reproducible results). |
