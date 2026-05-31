@@ -13,7 +13,9 @@ def test_detects_at_least_one_face():
     from monkepic.detector import FaceDetector
 
     regions = FaceDetector().detect(load_image(SAMPLE))
-    assert len(regions) >= 1
+    # The reference group photo has 13 detectable faces; guards the
+    # resolution-normalization fix (full-res YuNet missed the large front face).
+    assert len(regions) >= 13
     r = regions[0]
     assert r.w > 0 and r.h > 0
     assert r.left_eye != r.right_eye
