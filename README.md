@@ -1,51 +1,173 @@
-# MonkePic
+# MonkePic 🐵
 
-Local, offline tool that covers every face in a photo with a Solana Monkey
-Business (SMB) monke — background removed, scaled, positioned and rotated to the
-head. Built for MonkeDAO Argentina event-photo privacy.
+**Local, offline face anonymizer.** Drop in a photo and MonkePic covers every
+face with a [Solana Monkey Business](https://solanamonkey.business/) (SMB) monke —
+background removed, scaled to the head, positioned, and rotated to the head tilt.
+
+Built for [MonkeDAO Argentina](https://monkedao.io/) to share event photos
+without exposing people's faces. Everything runs on your machine — **no photo
+ever leaves your computer.**
+
+---
+
+## Why
+
+You want to post a group photo from a meetup, but not everyone wants their face
+public. MonkePic replaces faces with monkes automatically, so the vibe stays and
+the privacy is kept.
+
+It works in two levels:
+
+1. **Auto-anonymizer (this release)** — covers *every* face with a monke. No setup,
+   works on any photo.
+2. **Identity matching (roadmap)** — recognizes *who* each person is and gives them
+   *their own* monke; strangers get a generic one. (See [Roadmap](#roadmap).)
+
+---
 
 ## Install
 
+Requires Python ≥ 3.10. We use [uv](https://github.com/astral-sh/uv) for the
+environment.
+
 ```bash
+git clone <this-repo> MonkePic
+cd MonkePic
 uv venv --python 3.12
 uv pip install -e ".[dev]"
 ```
 
-## Use
+On first run, two ML models download automatically (face detector ~0.3 MB and the
+background remover ~176 MB) and are then cached locally.
+
+---
+
+## Usage
 
 ```bash
-# Anonymize one photo with a random monke per face from a pool
-uv run monkepic "Photos/Event-MiniGolf-24-04-2026/raw-pic.jpg" --monkes "Argentina Monkes" --out output
+# Cover every face with a random monke from a folder of monke images
+uv run monkepic path/to/photo.jpg --monkes path/to/monkes --out output
 
-# Force one specific monke
-uv run monkepic photo.jpg --monke "OurMonke/01 - Nico/Nico - SMB #3053 .png"
+# Force one specific monke for all faces
+uv run monkepic photo.jpg --monke path/to/one-monke.png
 
-# Also export face crops to build the Phase 3 enrollment dataset
-uv run monkepic photo.jpg --export-crops faces/_inbox
+# Process a whole folder of photos at once
+uv run monkepic path/to/photos/ --monkes path/to/monkes --out output
+
+# Also export a crop of each detected face (used to build the matching dataset)
+uv run monkepic photo.jpg --monkes path/to/monkes --export-crops faces/_inbox
 ```
 
-Then drag each crop from `faces/_inbox/` into the matching `faces/<Person>/`
-folder. Over a few events this builds the recognition dataset for Phase 3
-(identity matching).
+The result is written to `output/<name>-monked.png`.
 
-## How it works (Phase 1)
+### Options
 
-1. Detect every face (OpenCV YuNet) → bounding box + eye keypoints.
-2. Pick a monke per face (random, no repeats within a photo).
-3. Remove the monke's background — tiered: existing alpha → solid-color cutout →
-   `rembg` ML fallback for complex backgrounds (cached in `.monke-cache/`).
-4. Scale to cover the head, rotate to the head tilt (eye-line roll), composite.
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `input` | — | Photo file **or** a directory of photos (processed recursively). |
+| `--monkes DIR` | `Argentina Monkes` | Folder of monke images to pick from (png/jpg/webp/avif). |
+| `--monke FILE` | — | Use one specific monke for every face (overrides `--monkes`). |
+| `--out DIR` | `output` | Where results are written. |
+| `--margin FLOAT` | `0.4` | How much around the face the monke covers (higher = more of the head). |
+| `--no-rotate` | off | Disable 2D rotation (monkes stay upright). |
+| `--export-crops DIR` | — | Also save a crop of each detected face to this folder. |
+| `--seed INT` | — | Fix the random monke selection (reproducible results). |
+| `--min-confidence FLOAT` | `0.6` | Detection threshold. Lower it if a face is missed. |
 
-## Privacy
+> **Tip:** if a face in a group shot is missed (profile, far away), lower
+> `--min-confidence` (e.g. `0.4`).
 
-Everything runs locally. The only network access is a one-time model-weights
-download (face detector / rembg) on first run. No photo ever leaves your machine.
+---
+
+## How it works
+
+```
+photo ──▶ detect faces ──▶ for each face:
+                              pick a monke
+                              remove its background
+                              scale to cover the head
+                              rotate to the head tilt
+                              paste it on
+          ──▶ output/<name>-monked.png
+```
+
+1. **Detect faces** — OpenCV [YuNet](https://github.com/opencv/opencv_zoo), which
+   handles faces at varied sizes and distances (good for group photos) and gives
+   eye keypoints.
+2. **Remove the monke's background** — a tiered cascade, picking the cheapest tier
+   that works, cached so each monke is processed once:
+   - already-transparent PNG → used as-is;
+   - flat/solid background → fast color-key cutout;
+   - complex background → [rembg](https://github.com/danielgatis/rembg) (U²-Net ML).
+3. **Place it** — scale to cover the head (`--margin`), rotate to the eye-line tilt,
+   alpha-blend onto the photo.
+
+---
+
+## Project structure
+
+```
+MonkePic/
+├── src/monkepic/          # the package
+│   ├── cli.py             # command-line entry point
+│   ├── pipeline.py        # orchestration: detect → cover each face → save
+│   ├── detector.py        # OpenCV YuNet face detector wrapper
+│   ├── background.py      # tiered monke-background removal (alpha/solid/ML)
+│   ├── geometry.py        # pure math: roll angle, head box, scale-to-cover
+│   ├── compositor.py      # scale + rotate + alpha-blend the monke
+│   ├── selector.py        # pick a monke per face (random, no repeats)
+│   ├── crops.py           # export face crops (for the matching dataset)
+│   ├── loader.py          # image I/O incl. AVIF/WebP
+│   └── types.py           # FaceRegion, Placement
+├── tests/                 # pytest suite (TDD)
+├── docs/specs/            # spec + implementation plan
+├── README.md
+└── pyproject.toml
+```
+
+### Folders you provide (not in git)
+
+These hold images and outputs and are **gitignored** — bring your own:
+
+| Folder | What goes here |
+| --- | --- |
+| `<monkes>/` | Monke images to use (any folder you pass to `--monkes`). Supports png, jpg, webp, avif. |
+| `Photos/` | Input photos to anonymize. |
+| `output/` | Generated results (`*-monked.png`). |
+| `faces/_inbox/` | Face crops emitted by `--export-crops`, to be sorted for the matching dataset. |
+| `models/`, `.monke-cache/` | Auto-downloaded models and cached transparent monkes. |
+
+> ⚠️ **Privacy:** `Photos/`, `faces/`, `output/` and the monke folders are
+> gitignored on purpose so real faces and personal data are never committed. Keep
+> it that way if you fork this repo.
+
+---
+
+## Development
+
+```bash
+uv run pytest          # run the test suite
+uv run ruff check src tests   # lint
+```
+
+The codebase follows TDD — pure logic (geometry, selection, background tiers) is
+unit-tested in isolation; the ML detector is mocked in pipeline tests. See
+`docs/specs/monkepic.md` (spec) and `docs/specs/monkepic.plan.md` (plan).
+
+---
 
 ## Roadmap
 
-- Phase 2 — local web UI (Gradio) over the same core.
-- Phase 3 — identity matching: recognize who each face is and place *their* monke
-  from `OurMonke/`; unknown faces get a generic monke.
+- [x] **Phase 1 — Auto-anonymizer (CLI).** Cover every face with a monke.
+- [ ] **Phase 2 — Local web UI.** Drag a photo in the browser, download the result.
+- [ ] **Phase 3 — Identity matching.** Recognize who each face is and give them
+  *their* monke; unknown faces get a generic one. The `--export-crops` flag already
+  collects the face crops needed to build this dataset.
 
-See `docs/specs/monkepic.md` for the full spec and `docs/specs/monkepic.plan.md`
-for the implementation plan.
+---
+
+## License
+
+TBD before public release.
+```
+
