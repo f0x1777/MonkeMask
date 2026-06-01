@@ -102,26 +102,42 @@ def resolve_overlaps(
     *,
     max_overlap: float = 0.2,
     push_iters: int = 60,
+    shrink: bool = False,
     shrink_passes: int = 12,
     shrink_factor: float = 0.92,
 ) -> list[Placement]:
-    """Separate overlapping monke placements, shrinking toward face size only when
-    pushing alone can't get the overlap under ``max_overlap``. Roll is preserved;
-    each monke keeps covering its own face."""
+    """Separate overlapping monke placements by pushing them apart (each kept fully
+    covering its own face). Coverage-first by default: monkes are NEVER shrunk, so a
+    face is always covered even when faces are very close — residual overlap is
+    handled at paint time by drawing front monkes over back ones (see depth_order).
+    Pass ``shrink=True`` to also shrink toward face size when pushing can't reach
+    ``max_overlap`` (legacy behaviour). Roll is preserved."""
     if len(placements) < 2:
         return list(placements)
 
     boxes: list[Box] = [[p.cx, p.cy, float(p.w), float(p.h)] for p in placements]
-    for _ in range(shrink_passes):
+    passes = shrink_passes if shrink else 1
+    for _ in range(passes):
         for _ in range(push_iters):
             if not _push_round(boxes, faces, max_overlap):
                 break
         if _worst_ratio(boxes) <= max_overlap:
             break
-        if not _shrink_round(boxes, faces, shrink_factor):
+        if not shrink or not _shrink_round(boxes, faces, shrink_factor):
             break
 
     return [
         Placement(b[0], b[1], max(1, round(b[2])), max(1, round(b[3])), p.roll_deg)
         for b, p in zip(boxes, placements)
     ]
+
+
+def depth_order(faces: list[Face]) -> list[int]:
+    """Return face indices ordered back-to-front for painting. Heuristic for group
+    photos: a face that is lower in the frame and larger is nearer the camera, so it
+    should be painted last (on top). Sort by (bottom_edge, area) ascending."""
+    def key(i: int):
+        x, y, w, h = faces[i]
+        return (y + h, w * h)
+
+    return sorted(range(len(faces)), key=key)

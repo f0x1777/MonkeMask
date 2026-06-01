@@ -7,7 +7,7 @@ from . import geometry
 from .background import ensure_transparent
 from .compositor import composite
 from .crops import export_crops
-from .layout import resolve_overlaps
+from .layout import depth_order, resolve_overlaps
 from .loader import list_images, load_image, save_image
 from .selector import MonkeSelector
 
@@ -65,9 +65,11 @@ def process_image(
     face_boxes = [(r.x, r.y, r.w, r.h) for r in regions]
     placements = resolve_overlaps(placements, face_boxes)
 
+    # Paint back-to-front so a nearer monke covers the residual overlap of a
+    # farther one — every face stays fully covered even when faces are close.
     canvas = image.convert("RGBA")
-    for monke, placement in zip(monkes, placements):
-        canvas = composite(canvas, monke, placement)
+    for i in depth_order(face_boxes):
+        canvas = composite(canvas, monkes[i], placements[i])
 
     save_image(canvas, out_path)
     return out_path

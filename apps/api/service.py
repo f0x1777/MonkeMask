@@ -12,7 +12,7 @@ from monkepic import geometry
 from monkepic.background import ensure_transparent
 from monkepic.compositor import composite
 from monkepic.facefilter import filter_background
-from monkepic.layout import resolve_overlaps
+from monkepic.layout import depth_order, resolve_overlaps
 from monkepic.loader import load_image
 from monkepic.recognizer import Recognizer
 from monkepic.types import Placement, PersonEntry
@@ -143,8 +143,9 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
             Placement(p.cx + dx, p.cy + dy, p.w, p.h, p.roll_deg)
             for p, (dx, dy) in zip(placements, offsets)
         ]
-    for monke, placement in zip(monkes, placements):
-        canvas = composite(canvas, monke, placement)
+    # Paint back-to-front so a nearer monke covers a farther one's residual overlap.
+    for i in depth_order(faces):
+        canvas = composite(canvas, monkes[i], placements[i])
     buf = io.BytesIO()
     canvas.save(buf, format="PNG")
     return buf.getvalue()

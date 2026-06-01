@@ -50,10 +50,35 @@ def test_each_monke_still_covers_its_face():
 
 def test_very_close_faces_trigger_shrink():
     # Faces almost on top of each other -> pushing alone can't fix it -> shrink.
+    # Shrinking is opt-in now (coverage-first is the default); pass shrink=True.
     faces = [(48, 40, 40, 40), (52, 40, 40, 40)]  # centers only 4px apart
     pls = [Placement(68, 60, 80, 80, 0), Placement(72, 60, 80, 80, 0)]
-    out = resolve_overlaps(pls, faces, max_overlap=0.3)
+    out = resolve_overlaps(pls, faces, max_overlap=0.3, shrink=True)
     # at least one monke shrank below the original 80 to reduce overlap
     assert min(out[0].w, out[1].w) < 80
     # but never below the face size (still covers)
     assert out[0].w >= 40 and out[1].w >= 40
+
+
+def test_coverage_first_never_shrinks_below_face():
+    # Two faces 40px apart, monkes 80px: must stay >= face size and keep covering.
+    from monkepic.layout import resolve_overlaps as ro
+    faces = [(40, 40, 40, 40), (80, 40, 40, 40)]
+    pls = [Placement(60, 60, 80, 80, 0), Placement(100, 60, 80, 80, 0)]
+    out = ro(pls, faces)  # coverage-first by default
+    for p, (fx, fy, fw, fh) in zip(out, faces):
+        # monke still fully covers its face box
+        assert p.cx - p.w / 2 <= fx and p.cx + p.w / 2 >= fx + fw
+        assert p.cy - p.h / 2 <= fy and p.cy + p.h / 2 >= fy + fh
+        # and it was not shrunk below the original size
+        assert p.w >= 80 and p.h >= 80
+
+
+def test_depth_order_back_to_front():
+    from monkepic.layout import depth_order
+    # face A small/high (back), face B large/low (front)
+    faces = [(0, 0, 40, 40), (0, 200, 120, 120)]
+    order = depth_order(faces)
+    assert order == [0, 1]  # back (small/high) first, front (large/low) last
+    # reversed input -> same back-to-front result
+    assert depth_order([faces[1], faces[0]]) == [1, 0]
