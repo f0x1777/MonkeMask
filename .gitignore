@@ -28,6 +28,7 @@ models/
 /Photos/
 /faces/
 /output/
+/resource/
 /.monke-cache/
 
 # Secrets
