@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 from PIL import Image
 
@@ -72,6 +74,29 @@ def test_compose_applies_manual_offset(tmp_path):
     # monke center moved +80px in x -> green now present well to the right of base
     shifted_x = int(base.cx + 80)
     assert arr[int(base.cy), shifted_x, 1] > 100
+
+
+def test_compose_applies_manual_rotation(tmp_path):
+    # An asymmetric monke: green top half, red bottom half, fully opaque (alpha tier,
+    # so it passes through background removal unchanged). A 180° rotation swaps them.
+    photo = _save_photo(tmp_path)
+    arr = np.zeros((40, 40, 4), np.uint8)
+    arr[:20, :] = [0, 255, 0, 255]  # top: green
+    arr[20:, :] = [255, 0, 0, 255]  # bottom: red
+    monke = tmp_path / "tb.png"
+    Image.fromarray(arr, "RGBA").save(monke)
+    face = _region(80, 80, 40)  # level eyes -> base roll ~0
+    base = service.placement_for(face, Image.open(monke))
+    above = (int(base.cy - base.h * 0.3), int(base.cx))  # a point in the top half
+
+    up = np.array(Image.open(io.BytesIO(
+        service.compose(photo, [(face, monke)], offsets=[(0.0, 0.0, 1.0, 0.0)])
+    )).convert("RGB"))
+    down = np.array(Image.open(io.BytesIO(
+        service.compose(photo, [(face, monke)], offsets=[(0.0, 0.0, 1.0, 180.0)])
+    )).convert("RGB"))
+    assert up[above][1] > 150 and up[above][0] < 100  # top is green at rot=0
+    assert down[above][0] > 150 and down[above][1] < 100  # top is red at rot=180
 
 
 def test_layout_returns_placements_and_cutouts(tmp_path):

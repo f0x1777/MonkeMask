@@ -72,9 +72,11 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
 
     Overlapping monkes (close faces) are nudged apart automatically. ``offsets`` is
     an optional list of per-pair manual adjustments applied AFTER the auto layout —
-    each is ``(dx, dy)`` or ``(dx, dy, scale)`` in original-image pixels (scale is a
-    multiplier on the monke size, default 1.0). This is how the web lets a user
-    drag/resize a monke by hand. Faces not present in ``pairs`` are left uncovered."""
+    each is ``(dx, dy)``, ``(dx, dy, scale)`` or ``(dx, dy, scale, rot)``: dx/dy in
+    original-image pixels, scale a multiplier on the monke size (default 1.0), and rot
+    extra degrees added to the eye-roll (default 0). This is how the web lets a user
+    drag/resize/rotate a monke by hand. Faces not present in ``pairs`` are left
+    uncovered."""
     canvas = load_image(photo_path).convert("RGBA")
     monkes = [ensure_transparent(load_image(mp)) for _, mp in pairs]
     placements = [placement_for(r, m, margin=margin, rotate=rotate)
@@ -86,10 +88,11 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
         for p, off in zip(placements, offsets):
             dx, dy = off[0], off[1]
             scale = off[2] if len(off) > 2 else 1.0
+            rot = off[3] if len(off) > 3 else 0.0  # manual rotation on top of eye-roll
             adjusted.append(Placement(
                 p.cx + dx, p.cy + dy,
                 max(1, round(p.w * scale)), max(1, round(p.h * scale)),
-                p.roll_deg,
+                p.roll_deg + rot,
             ))
         placements = adjusted
     # Paint back-to-front so a nearer monke covers a farther one's residual overlap.

@@ -23,7 +23,7 @@ export default function Home() {
   const [monkes, setMonkes] = useState<Monke[]>([]);
   const [assign, setAssign] = useState<Record<number, string>>({});
   const [offsets, setOffsets] =
-    useState<Record<number, { dx: number; dy: number; scale: number }>>({});
+    useState<Record<number, { dx: number; dy: number; scale: number; rot: number }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
   const [selectedMonke, setSelectedMonke] = useState<string | null>(null);
   // Live preview: cutouts + base placements (server) edited locally; the heavy
@@ -164,8 +164,8 @@ export default function Home() {
 
   function buildAssignments(assignMap: Record<number, string>, off: typeof offsets) {
     return Object.entries(assignMap).map(([fi, mid]) => {
-      const o = off[Number(fi)] || { dx: 0, dy: 0, scale: 1 };
-      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy, scale: o.scale };
+      const o = off[Number(fi)] || { dx: 0, dy: 0, scale: 1, rot: 0 };
+      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy, scale: o.scale, rot: o.rot };
     });
   }
 
@@ -236,16 +236,23 @@ export default function Home() {
   // the preview overlay reads. No server round-trip until Download.
   function nudge(faceIndex: number, dx: number, dy: number) {
     setOffsets((o) => {
-      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
       return { ...o, [faceIndex]: { ...cur, dx: cur.dx + dx, dy: cur.dy + dy } };
     });
   }
 
   function resize(faceIndex: number, factor: number) {
     setOffsets((o) => {
-      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
       const scale = Math.min(4, Math.max(0.25, cur.scale * factor));
       return { ...o, [faceIndex]: { ...cur, scale } };
+    });
+  }
+
+  function rotate(faceIndex: number, deg: number) {
+    setOffsets((o) => {
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
+      return { ...o, [faceIndex]: { ...cur, rot: cur.rot + deg } };
     });
   }
 
@@ -258,7 +265,7 @@ export default function Home() {
     setDragTarget(faceIndex);
     const startX = e.clientX;
     const startY = e.clientY;
-    const start = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+    const start = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
     const scale = dispW / layout.image.w; // display px per image px
 
     const onMove = (ev: MouseEvent) => {
@@ -493,7 +500,7 @@ export default function Home() {
               return [...layout.items]
                 .sort((a, b) => a.z - b.z)
                 .map((it) => {
-                  const off = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1 };
+                  const off = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1, rot: 0 };
                   const cx = (it.cx + off.dx) * S0;
                   const cy = (it.cy + off.dy) * S0;
                   const w = it.w * off.scale * S0;
@@ -512,7 +519,7 @@ export default function Home() {
                         top: cy,
                         width: w,
                         height: h,
-                        transform: `translate(-50%, -50%) rotate(${-it.roll_deg}deg)`,
+                        transform: `translate(-50%, -50%) rotate(${-(it.roll_deg + off.rot)}deg)`,
                         cursor: "grab",
                         outline: sel ? `2px dashed ${ui.accent}` : "none",
                         outlineOffset: 2,
@@ -527,9 +534,9 @@ export default function Home() {
             <summary style={S.summary}>Fine-tune a monke</summary>
             <p style={S.label}>
               <strong>Drag any monke</strong> on the image to move it (instant), or
-              pick a face below and use the arrows (◀▲▼▶) and <strong>－／＋</strong> to
-              nudge/resize. Changes preview live — nothing is uploaded until you
-              download.
+              pick a face below and use the arrows (◀▲▼▶), <strong>－／＋</strong> to
+              resize, and <strong>⟲／⟳</strong> to rotate. Changes preview live —
+              nothing is uploaded until you download.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
@@ -559,13 +566,16 @@ export default function Home() {
                     <span style={{ width: 1, height: 26, background: ui.panelBorder, margin: "0 2px" }} />
                     <button style={S.arrow} onClick={() => resize(f.index, 1 / 1.15)} title="smaller">－</button>
                     <button style={S.arrow} onClick={() => resize(f.index, 1.15)} title="bigger">＋</button>
-                    {(offsets[f.index]?.dx || offsets[f.index]?.dy || (offsets[f.index]?.scale ?? 1) !== 1) ? (
+                    <span style={{ width: 1, height: 26, background: ui.panelBorder, margin: "0 2px" }} />
+                    <button style={S.arrow} onClick={() => rotate(f.index, -10)} title="rotate left">⟲</button>
+                    <button style={S.arrow} onClick={() => rotate(f.index, 10)} title="rotate right">⟳</button>
+                    {(offsets[f.index]?.dx || offsets[f.index]?.dy || (offsets[f.index]?.scale ?? 1) !== 1 || offsets[f.index]?.rot) ? (
                       <button
                         style={S.arrow}
                         title="reset this monke"
-                        onClick={() => setOffsets((o) => ({ ...o, [f.index]: { dx: 0, dy: 0, scale: 1 } }))}
+                        onClick={() => setOffsets((o) => ({ ...o, [f.index]: { dx: 0, dy: 0, scale: 1, rot: 0 } }))}
                       >
-                        ↺
+                        ✕
                       </button>
                     ) : null}
                   </div>
