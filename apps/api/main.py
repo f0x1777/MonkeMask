@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
@@ -10,16 +12,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from monkepic.loader import SUPPORTED
 
 from . import service
-from .sessions import SessionStore
+from .sessions import SessionStore, periodic_sweep
 
 MAX_PHOTO_BYTES = 25 * 1024 * 1024
 MAX_MONKE_BYTES = 5 * 1024 * 1024
 MAX_FACES = 50
 MAX_MONKES = 200
+# How often the background loop deletes expired sessions. The session TTL is 30 min
+# (SessionStore default), so a 5-min sweep guarantees every uploaded photo is gone
+# within ~35 min at the latest, even with zero traffic.
+SWEEP_INTERVAL_SECONDS = 300
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run a background sweep so photos are deleted on the TTL regardless of traffic."""
+    task = asyncio.create_task(periodic_sweep(app.state.sessions, SWEEP_INTERVAL_SECONDS))
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
 
 # A detector is created lazily and reused (model load is expensive). Tests inject
 # their own via app.state.detector.
-app = FastAPI(title="MonkeMask API")
+app = FastAPI(title="MonkeMask API", lifespan=lifespan)
 # Allowed web origins: comma-separated MONKEMASK_WEB_ORIGIN (e.g. the Vercel URL),
 # plus localhost for dev. Vercel preview URLs are matched by regex.
 _origins = [o.strip() for o in os.environ.get("MONKEMASK_WEB_ORIGIN", "").split(",") if o.strip()]

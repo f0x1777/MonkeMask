@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
 import time
@@ -64,3 +65,13 @@ class SessionStore:
         for sid in expired:
             self.delete(sid)
         return expired
+
+
+async def periodic_sweep(store: SessionStore, interval: float) -> None:
+    """Background loop that calls ``store.sweep()`` every ``interval`` seconds, so an
+    uploaded photo is always deleted within its TTL even when the app is idle (the
+    per-request sweep only runs when a /api/compose call happens to arrive). Runs
+    until cancelled (on app shutdown)."""
+    while True:
+        await asyncio.sleep(interval)
+        store.sweep()
