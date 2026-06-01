@@ -1,6 +1,8 @@
+import numpy as np
 from PIL import Image
 
-from monkepic.gallery import parse_person_folder
+from monkepic.gallery import build_gallery, parse_person_folder
+from monkepic.types import FaceRegion
 
 
 def _img(path):
@@ -32,3 +34,53 @@ def test_parse_no_monke_returns_none(tmp_path):
     monke, faces = parse_person_folder(d)
     assert monke is None
     assert len(faces) == 1
+
+
+class FakeDetector:
+    def detect(self, image):
+        return [FaceRegion(0, 0, 8, 8, (0.0, 0.0), (8.0, 0.0))]
+
+
+class FakeEmbedder:
+    """Returns a fixed vector per person based on folder name."""
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, image, region):
+        self.calls += 1
+        return np.array([1.0, 0.0, 0.0])
+
+
+def test_build_gallery_one_entry_per_enrolled_person(tmp_path):
+    nico = tmp_path / "01 - Nico"
+    _img(nico / "Nico - SMB #1.png")
+    _img(nico / "face_a.png")
+    _img(nico / "face_b.png")
+    messi = tmp_path / "02 - SrMessi"
+    _img(messi / "SrMessi - SMB #2.png")  # monke only, no faces
+    potential = tmp_path / "Potential - Turi"
+    _img(potential / "Turi - SMB #3.png")
+    _img(potential / "face_c.png")
+
+    gallery = build_gallery(tmp_path, FakeEmbedder(), FakeDetector())
+
+    names = {p.name for p in gallery}
+    assert names == {"Nico"}              # Messi skipped (no faces), Potential ignored
+    entry = gallery[0]
+    assert entry.n_refs == 2
+    v = np.array(entry.embedding)
+    assert np.isclose(np.linalg.norm(v), 1.0)  # normalized
+
+
+def test_build_gallery_skips_unreadable_face(tmp_path):
+    nico = tmp_path / "01 - Nico"
+    _img(nico / "Nico - SMB #1.png")
+    _img(nico / "face_a.png")
+
+    class OneBadEmbedder(FakeEmbedder):
+        def embed(self, image, region):
+            super().embed(image, region)
+            raise ValueError("no face")
+
+    gallery = build_gallery(tmp_path, OneBadEmbedder(), FakeDetector())
+    assert gallery == []  # only face failed -> person not enrolled
