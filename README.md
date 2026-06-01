@@ -8,8 +8,8 @@ Built for [MonkeDAO Argentina](https://monkedao.io/) to share event photos
 without exposing people's faces. Everything runs on your machine — **no photo
 ever leaves your computer.**
 
-> Built by [@f0x1777](https://github.com/f0x1777) of the Chapter of Argentina 🇦🇷
-> to the rest of the world.
+> Built by [@f0x1777](https://github.com/f0x1777) of the Argentina Chapter 🇦🇷
+> for the rest of the world. 🌎
 
 > Designed as a tool for **local ambassadors with little to no photo-editing
 > skill**: no Photoshop, no manual masking — point it at a group photo and it does
@@ -251,4 +251,4 @@ matching `*.plan.md` files.
 
 ## License
 
-TBD before public release.
+MIT © [f0x1777](https://github.com/f0x1777). See [LICENSE](LICENSE).

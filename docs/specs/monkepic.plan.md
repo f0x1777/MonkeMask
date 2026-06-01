@@ -120,7 +120,7 @@ def gradient_bg_monke():
 
 Run:
 ```bash
-cd "/Users/nico/Projects-personal/MonkePic"
+cd "<repo-root>"
 uv venv
 uv pip install -e ".[dev]"
 ```

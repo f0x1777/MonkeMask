@@ -557,11 +557,19 @@ export default function Home() {
             <a href="https://monkedao.io" target="_blank" rel="noreferrer" style={S.footerLink}>
               🌐 MonkeDAO
             </a>
+            <a href="https://x.com/MonkeDAO" target="_blank" rel="noreferrer" style={S.footerLink}>
+              𝕏 MonkeDAO
+            </a>
             <a href="https://github.com/f0x1777/MonkeMask" target="_blank" rel="noreferrer" style={S.footerLink}>
               💻 GitHub
             </a>
-            <a href="https://solanamonkey.business" target="_blank" rel="noreferrer" style={S.footerLink}>
-              🐒 SMB
+          </div>
+          <div style={S.footerLinks}>
+            <a href="https://magiceden.io/marketplace/smb_gen3" target="_blank" rel="noreferrer" style={S.footerLink}>
+              🛒 Buy a Gen3 monke
+            </a>
+            <a href="https://magiceden.io/marketplace/solana_monkey_business" target="_blank" rel="noreferrer" style={S.footerLink}>
+              🛒 Buy a Gen2 monke
             </a>
           </div>
           <p style={S.footerCredit}>
@@ -569,7 +577,7 @@ export default function Home() {
             <a href="https://github.com/f0x1777" target="_blank" rel="noreferrer" style={{ color: ui.accent, fontWeight: 700 }}>
               @f0x1777
             </a>{" "}
-            of the Chapter of Argentina 🇦🇷 — to the rest of the world. 🌎
+            of the Argentina Chapter 🇦🇷 for the rest of the world. 🌎
           </p>
         </footer>
       </main>
