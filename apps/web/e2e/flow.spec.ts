@@ -32,9 +32,10 @@ test("full flow: upload photo, pair a monke, generate, download", async ({ page 
   await expect(page.getByText("1/" + faceCount + " done")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("03-paired.png"), fullPage: true });
 
-  // Step 3: generate (accept the "unassigned faces" confirm dialog).
-  page.on("dialog", (d) => d.accept());
+  // Step 3: generate. Only one face is paired, so the unassigned-faces modal
+  // appears — choose "Leave visible".
   await page.getByRole("button", { name: /Generate/ }).click();
+  await page.getByRole("button", { name: /Leave visible/ }).click();
 
   const result = page.locator('img[alt="result"]');
   await expect(result).toBeVisible({ timeout: 60_000 });

@@ -57,9 +57,12 @@ test("auto-suggest recognizes a face and fills its monke", async ({ page }, test
     await generic.click();
   }
 
-  // Generate and confirm a result renders.
-  page.on("dialog", (d) => d.accept());
+  // Generate. If faces remain unassigned, the modal appears — cover them.
   await page.getByRole("button", { name: /Generate/ }).click();
+  const cover = page.getByRole("button", { name: /Cover with DAOJones/ });
+  if (await cover.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await cover.click();
+  }
   await expect(page.locator('img[alt="result"]')).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: testInfo.outputPath("a3-result.png"), fullPage: true });
 });

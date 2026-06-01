@@ -28,6 +28,9 @@ export default function Home() {
   const [unmatched, setUnmatched] = useState<number[]>([]);
   const [suggestMsg, setSuggestMsg] = useState<string | null>(null);
 
+  // Modal shown when some faces have no monke at Generate time.
+  const [unassignedPrompt, setUnassignedPrompt] = useState<number | null>(null);
+
   // Which assigned face the drag-on-result moves.
   const [dragTarget, setDragTarget] = useState<number | null>(null);
   const resultImgRef = useRef<HTMLImageElement | null>(null);
@@ -188,20 +191,67 @@ export default function Home() {
   async function generate() {
     if (!session) return;
     const unassigned = faces.filter((f) => !assign[f.index]).length;
-    if (
-      unassigned > 0 &&
-      !confirm(`${unassigned} face(s) have no monke and will stay visible. Continue?`)
-    )
+    if (unassigned > 0) {
+      // Offer a choice (leave visible vs cover with DAOJones) via a modal.
+      setUnassignedPrompt(unassigned);
       return;
+    }
+    await runCompose(assign);
+  }
+
+  // Compose with an explicit assignment map (so we can compose right after
+  // mutating assignments without waiting for React state to settle).
+  async function runCompose(assignMap: Record<number, string>) {
+    if (!session) return;
+    setUnassignedPrompt(null);
     setBusy(true);
     setError(null);
     try {
-      await composeWith(session, offsets);
+      const assignments = Object.entries(assignMap).map(([fi, mid]) => {
+        const o = offsets[Number(fi)] || { dx: 0, dy: 0 };
+        return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy };
+      });
+      const r = await fetch(`${API}/api/compose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, assignments }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
+      setResultUrl(URL.createObjectURL(await r.blob()));
     } catch (err: any) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Modal choice A: cover the unassigned faces with the generic DAOJones, then compose.
+  async function coverRestWithGeneric() {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/generic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "generic failed");
+      const g = await r.json();
+      setMonkes((m) => (m.some((x) => x.id === g.id) ? m : [...m, g]));
+      const next = { ...assign };
+      for (const f of faces) if (!next[f.index]) next[f.index] = g.id;
+      setAssign(next);
+      await runCompose(next);
+    } catch (err: any) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  // Modal choice B: leave the unassigned faces visible, compose as-is.
+  async function leaveRestVisible() {
+    await runCompose(assign);
   }
 
   async function nudge(faceIndex: number, dx: number, dy: number) {
@@ -284,6 +334,7 @@ export default function Home() {
     setSuggestMsg(null);
     setPName("");
     setPMonke(null);
+    setUnassignedPrompt(null);
   }
 
   const assignedCount = faces.filter((f) => assign[f.index]).length;
@@ -313,7 +364,6 @@ export default function Home() {
             <span style={S.badge}>🔒 100% private</span>
             <span style={S.badge}>⚡ Auto face detection</span>
             <span style={S.badge}>🎨 Your own monkes</span>
-            <span style={S.badge}>🇦🇷 by MonkeDAO Argentina</span>
           </div>
         </header>
 
@@ -581,6 +631,32 @@ export default function Home() {
           </p>
         </footer>
       </main>
+
+      {/* Unassigned-faces choice modal */}
+      {unassignedPrompt !== null && (
+        <div style={S.modalBackdrop} onClick={() => setUnassignedPrompt(null)}>
+          <div style={S.modal} className="pop-in" onClick={(e) => e.stopPropagation()}>
+            <h3 style={S.modalTitle}>
+              🐵 {unassignedPrompt} face{unassignedPrompt > 1 ? "s" : ""} without a monke
+            </h3>
+            <p style={S.modalText}>
+              {unassignedPrompt > 1 ? "These faces" : "This face"} would stay visible.
+              What do you want to do?
+            </p>
+            <div style={S.modalActions}>
+              <button onClick={coverRestWithGeneric} disabled={busy} style={S.primary} className="lift">
+                🙈 Cover with DAOJones
+              </button>
+              <button onClick={leaveRestVisible} disabled={busy} style={S.secondary}>
+                👀 Leave visible
+              </button>
+            </div>
+            <button onClick={() => setUnassignedPrompt(null)} style={S.modalCancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -838,4 +914,43 @@ const S: Record<string, any> = {
     background: "rgba(243,239,205,0.06)",
   },
   footerCredit: { color: ui.textDim, fontSize: 13, marginTop: 14 },
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(8,24,12,0.72)",
+    backdropFilter: "blur(3px)",
+    WebkitBackdropFilter: "blur(3px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 50,
+    padding: 20,
+  },
+  modal: {
+    background: ui.panel,
+    border: `1px solid ${ui.panelBorder}`,
+    borderRadius: 18,
+    padding: 28,
+    maxWidth: 440,
+    width: "100%",
+    textAlign: "center",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+  },
+  modalTitle: { margin: "0 0 8px", fontSize: 20 },
+  modalText: { color: ui.textDim, fontSize: 15, margin: "0 0 20px", lineHeight: 1.5 },
+  modalActions: {
+    display: "flex",
+    gap: 12,
+    justifyContent: "center",
+    flexWrap: "wrap",
+  },
+  modalCancel: {
+    marginTop: 16,
+    background: "transparent",
+    border: "none",
+    color: ui.textDim,
+    fontSize: 14,
+    cursor: "pointer",
+    textDecoration: "underline",
+  },
 };
