@@ -9,6 +9,7 @@ OURMONKE = Path("OurMonke")
 GENERIC = Path("MonkeDAO_DAOJones.png")
 
 
+@pytest.mark.smoke
 @pytest.mark.skipif(
     not (SAMPLE.exists() and OURMONKE.exists() and GENERIC.exists()),
     reason="sample data not present",

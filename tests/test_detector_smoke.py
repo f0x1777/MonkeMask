@@ -7,6 +7,7 @@ from monkepic.loader import load_image
 SAMPLE = Path("Photos/Event-MiniGolf-24-04-2026/raw-pic.jpg")
 
 
+@pytest.mark.smoke
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample photo not present")
 def test_detects_at_least_one_face():
     pytest.importorskip("cv2")
