@@ -706,14 +706,21 @@ export default function Home() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
                 .filter((f) => assign[f.index])
-                .map((f) => (
+                .map((f) => {
+                  const monkeSrc = layout.items.find((it) => it.face_index === f.index)?.monke;
+                  return (
                   <div key={f.index} style={S.nudgeRow(dragTarget === f.index)}>
                     <button
                       style={S.facePick(dragTarget === f.index)}
                       onClick={() => setDragTarget(dragTarget === f.index ? null : f.index)}
-                      title="highlight this monke"
+                      title="highlight this monke on the image"
                     >
-                      #{f.index} {dragTarget === f.index ? "✋" : ""}
+                      {monkeSrc ? (
+                        <img src={monkeSrc} alt="" style={S.facePickThumb} draggable={false} />
+                      ) : (
+                        `#${f.index}`
+                      )}
+                      {dragTarget === f.index ? <span style={S.facePickHand}>✋</span> : null}
                     </button>
                     <button style={S.arrow} onClick={() => nudge(f.index, -NUDGE, 0)}>◀</button>
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -734,7 +741,8 @@ export default function Home() {
                       </button>
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
             </div>
           </details>
 
@@ -1045,15 +1053,33 @@ const S: Record<string, any> = {
     border: `2px solid ${active ? ui.accent : "transparent"}`,
   }),
   facePick: (active: boolean) => ({
-    minWidth: 44,
-    height: 30,
-    borderRadius: 7,
-    border: `1px solid ${active ? ui.accent : ui.panelBorder}`,
+    position: "relative" as const,
+    width: 46,
+    height: 46,
+    padding: 3,
+    borderRadius: 9,
+    border: `2px solid ${active ? ui.accent : ui.panelBorder}`,
     background: active ? ui.accent : ui.panel,
     color: active ? ui.accentText : ui.ivory,
     fontWeight: 700,
     cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   }),
+  facePickThumb: {
+    width: 38,
+    height: 38,
+    objectFit: "contain" as const,
+    display: "block",
+  },
+  facePickHand: {
+    position: "absolute" as const,
+    top: -8,
+    right: -8,
+    fontSize: 16,
+    filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.5))",
+  },
   arrow: {
     width: 30,
     height: 30,
