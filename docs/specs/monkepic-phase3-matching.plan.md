@@ -42,7 +42,7 @@ README + smoke.
 - Modify: `src/monkepic/types.py`
 - Test: `tests/test_recognizer.py` (uses them in Task 3)
 
-- [ ] **Step 1: Add the dataclasses**
+- [x] **Step 1: Add the dataclasses**
 
 Append to `src/monkepic/types.py`:
 ```python
@@ -74,12 +74,12 @@ class MatchResult:
 Note: `embedding` is stored as a plain tuple of floats so `PersonEntry` stays
 hashable/frozen; numpy arrays are converted at the boundary in `gallery`/`recognizer`.
 
-- [ ] **Step 2: Sanity import**
+- [x] **Step 2: Sanity import**
 
 Run: `uv run python -c "from monkepic.types import PersonEntry, MatchResult; print('ok')"`
 Expected: `ok`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/monkepic/types.py
@@ -96,7 +96,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Create: `src/monkepic/facefilter.py`
 - Test: `tests/test_facefilter.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_facefilter.py`:
 ```python
@@ -133,12 +133,12 @@ def test_filter_background_empty():
     assert filter_background([]) == []
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_facefilter.py -v`
 Expected: FAIL (ModuleNotFoundError: monkepic.facefilter)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/monkepic/facefilter.py`:
 ```python
@@ -176,12 +176,12 @@ def filter_background(
     return [r for r in regions if keep_face(r, med, min_ratio, min_px)]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_facefilter.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/facefilter.py tests/test_facefilter.py
@@ -198,7 +198,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Create: `src/monkepic/recognizer.py`
 - Test: `tests/test_recognizer.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_recognizer.py`:
 ```python
@@ -250,12 +250,12 @@ def test_match_empty_gallery_is_generic():
     assert res.person is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_recognizer.py -v`
 Expected: FAIL (ModuleNotFoundError)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/monkepic/recognizer.py`:
 ```python
@@ -298,12 +298,12 @@ class Recognizer:
         return MatchResult(None, best_sim, self._generic, True)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_recognizer.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/recognizer.py tests/test_recognizer.py
@@ -320,7 +320,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Create: `src/monkepic/gallery.py`
 - Test: `tests/test_gallery.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_gallery.py`:
 ```python
@@ -360,12 +360,12 @@ def test_parse_no_monke_returns_none(tmp_path):
     assert len(faces) == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_gallery.py -v`
 Expected: FAIL (ModuleNotFoundError)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/monkepic/gallery.py`:
 ```python
@@ -389,12 +389,12 @@ def parse_person_folder(folder: str | Path) -> tuple[Path | None, list[Path]]:
     return monke, faces
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_gallery.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/gallery.py tests/test_gallery.py
@@ -415,7 +415,7 @@ This module wraps a heavy ML dependency; its real behavior is covered by the
 skippable smoke test (Task 9). Here we only add the module and a construction test
 that does not load the model.
 
-- [ ] **Step 1: Write a light construction test**
+- [x] **Step 1: Write a light construction test**
 
 `tests/test_embedder.py`:
 ```python
@@ -429,12 +429,12 @@ def test_embedder_constructs_without_loading_model():
     assert emb._app is None  # model not loaded yet
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_embedder.py -v`
 Expected: FAIL (ModuleNotFoundError)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/monkepic/embedder.py`:
 ```python
@@ -484,12 +484,12 @@ class FaceEmbedder:
         return vec / max(float(np.linalg.norm(vec)), 1e-12)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_embedder.py -v`
 Expected: 1 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/embedder.py tests/test_embedder.py
@@ -506,7 +506,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Modify: `src/monkepic/gallery.py`
 - Test: `tests/test_gallery.py`
 
-- [ ] **Step 1: Add the failing test**
+- [x] **Step 1: Add the failing test**
 
 Append to `tests/test_gallery.py`:
 ```python
@@ -566,12 +566,12 @@ def test_build_gallery_skips_unreadable_face(tmp_path):
     assert gallery == []  # only face failed -> person not enrolled
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_gallery.py::test_build_gallery_one_entry_per_enrolled_person -v`
 Expected: FAIL (ImportError: build_gallery)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `src/monkepic/gallery.py`:
 ```python
@@ -622,12 +622,12 @@ def build_gallery(ourmonke_dir, embedder, detector) -> list[PersonEntry]:
     return entries
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_gallery.py -v`
 Expected: all passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/gallery.py tests/test_gallery.py
@@ -649,7 +649,7 @@ This refactor keeps composition in one place so matching can reuse it (DRY).
 `FaceRegion` to a list of monke paths. The existing random selection becomes the
 default callback, so Phase 1 behavior is unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_pipeline_choose.py`:
 ```python
@@ -698,12 +698,12 @@ def test_choose_monke_callback_controls_assignment(tmp_path):
     assert arr[200, 200, 2] > 100 and arr[200, 200, 0] < 100  # face 1 bluish
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_pipeline_choose.py -v`
 Expected: FAIL (TypeError: unexpected keyword 'choose_monke')
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/monkepic/pipeline.py`, change the `process_image` signature to add the
 callback and replace the monke-selection block. Replace this existing block:
@@ -744,12 +744,12 @@ with:
         monke_paths = MonkeSelector(pool, seed=seed).assign(len(regions))
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_pipeline_choose.py tests/test_pipeline.py -v`
 Expected: all passed (existing pipeline tests still green — Phase 1 unchanged)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/pipeline.py tests/test_pipeline_choose.py
@@ -766,7 +766,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Create: `src/monkepic/matching.py`
 - Test: `tests/test_matching.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_matching.py`:
 ```python
@@ -853,12 +853,12 @@ def test_no_faces_copies_through(tmp_path):
     assert out.exists()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_matching.py -v`
 Expected: FAIL (ModuleNotFoundError)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/monkepic/matching.py`:
 ```python
@@ -921,12 +921,12 @@ Add the missing import at the top of the file (it is used in `choose`):
 from .loader import load_image
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_matching.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/matching.py tests/test_matching.py
@@ -946,7 +946,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 Cache the gallery to `.monke-cache/gallery.npz` keyed by a hash of the reference
 photos (paths + mtimes), so we re-enroll only when photos change.
 
-- [ ] **Step 1: Add the failing test**
+- [x] **Step 1: Add the failing test**
 
 Append to `tests/test_gallery.py`:
 ```python
@@ -982,12 +982,12 @@ def test_cache_reuse_then_rebuild_on_change(tmp_path):
     assert emb4.calls == 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_gallery.py::test_cache_reuse_then_rebuild_on_change -v`
 Expected: FAIL (ImportError: load_or_build_gallery)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `src/monkepic/gallery.py`:
 ```python
@@ -1040,12 +1040,12 @@ def load_or_build_gallery(
     return gallery
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_gallery.py -v`
 Expected: all passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/gallery.py tests/test_gallery.py
@@ -1062,7 +1062,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Modify: `src/monkepic/cli.py`
 - Test: `tests/test_cli_match.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_cli_match.py`:
 ```python
@@ -1131,12 +1131,12 @@ def test_cli_without_match_is_phase1(tmp_path):
     assert (tmp_path / "out" / "in-monked.png").exists()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_cli_match.py -v`
 Expected: FAIL (unrecognized arguments: --match)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/monkepic/cli.py`, add the new arguments in `build_parser` (after
 `--min-confidence`):
@@ -1196,12 +1196,12 @@ early:
 
 (The existing non-match `process_path(...)` block stays as the fallback below.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_cli_match.py tests/test_cli.py -v`
 Expected: all passed (Phase 1 CLI tests still green)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/monkepic/cli.py tests/test_cli_match.py
@@ -1218,7 +1218,7 @@ Refs: docs/specs/monkepic-phase3-matching.md"
 - Modify: `pyproject.toml`, `README.md`
 - Test: `tests/test_matching_smoke.py`
 
-- [ ] **Step 1: Add insightface dependency**
+- [x] **Step 1: Add insightface dependency**
 
 In `pyproject.toml`, add to `dependencies`:
 ```toml
@@ -1228,7 +1228,7 @@ In `pyproject.toml`, add to `dependencies`:
 Run: `uv pip install -e ".[dev]"`
 Expected: insightface installs (onnxruntime already present).
 
-- [ ] **Step 2: Write the skippable real-model smoke test**
+- [x] **Step 2: Write the skippable real-model smoke test**
 
 `tests/test_matching_smoke.py`:
 ```python
@@ -1276,14 +1276,14 @@ def test_real_matching_assigns_at_least_one_person(tmp_path):
     assert matched >= 1
 ```
 
-- [ ] **Step 3: Run smoke test (real models — may download on first run)**
+- [x] **Step 3: Run smoke test (real models — may download on first run)**
 
 Run: `uv run pytest tests/test_matching_smoke.py -v`
 Expected: PASS (or SKIP if data absent). If it fails because no face matches at
 threshold 0.3, that reflects the cold-start limitation — note it, do not loosen
 the assertion below 0.3.
 
-- [ ] **Step 4: Update README — add a Matching section**
+- [x] **Step 4: Update README — add a Matching section**
 
 In `README.md`, under Usage (after the existing examples), add:
 ```markdown
@@ -1317,7 +1317,7 @@ Matching flags: `--ourmonke DIR`, `--generic-monke FILE`,
 
 Also update the Roadmap: change the Phase 3 line to `- [x]`.
 
-- [ ] **Step 5: Full verification + commit**
+- [x] **Step 5: Full verification + commit**
 
 Run:
 ```bash
