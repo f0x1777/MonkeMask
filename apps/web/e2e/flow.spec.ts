@@ -45,12 +45,29 @@ test("full flow: upload photo, pair a monke, generate, download", async ({ page 
   await expect(dl).toBeVisible();
   expect(await dl.getAttribute("href")).toMatch(/^blob:/);
 
-  // Adjust panel: nudge face #0 and confirm the result image still renders.
-  await page.getByText(/Adjust a monke/).click();
-  const before = await result.getAttribute("src");
-  await page.locator('div:has(strong:text-is("#0")) button', { hasText: "▶" }).first().click();
+  // Adjust panel is open by default; nudge face #0 with the arrow and confirm the
+  // result image changes.
+  const beforeNudge = await result.getAttribute("src");
+  await page.locator('button:has-text("▶")').first().click();
   await expect(async () => {
-    expect(await result.getAttribute("src")).not.toBe(before);
+    expect(await result.getAttribute("src")).not.toBe(beforeNudge);
   }).toPass({ timeout: 30_000 });
   await page.screenshot({ path: testInfo.outputPath("05-adjusted.png"), fullPage: true });
+
+  // Drag with the mouse: pick face #0, then drag across the result image.
+  await page.getByRole("button", { name: /^#0/ }).click();
+  await expect(page.getByText(/Dragging face #0/)).toBeVisible();
+  const beforeDrag = await result.getAttribute("src");
+  // page.mouse uses viewport coords — scroll the image in so boundingBox is on-screen.
+  await result.scrollIntoViewIfNeeded();
+  const box = await result.boundingBox();
+  if (!box) throw new Error("no result image box");
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+  await expect(async () => {
+    expect(await result.getAttribute("src")).not.toBe(beforeDrag);
+  }).toPass({ timeout: 30_000 });
+  await page.screenshot({ path: testInfo.outputPath("06-dragged.png"), fullPage: true });
 });

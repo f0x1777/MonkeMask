@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ui } from "./theme";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
@@ -20,6 +20,10 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Which assigned face the drag-on-result moves.
+  const [dragTarget, setDragTarget] = useState<number | null>(null);
+  const resultImgRef = useRef<HTMLImageElement | null>(null);
+
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -38,6 +42,7 @@ export default function Home() {
       setOffsets({});
       setResultUrl(null);
       setSelectedFace(null);
+      setDragTarget(null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -119,6 +124,48 @@ export default function Home() {
     }
   }
 
+  // Drag a monke on the result image. Screen-pixel movement is scaled to
+  // original-image pixels (naturalWidth / displayed width). Uses window mouse
+  // events so the drag survives the pointer leaving the image.
+  function onResultMouseDown(e: React.MouseEvent<HTMLImageElement>) {
+    if (dragTarget === null || !session) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const face = dragTarget;
+    const sid = session;
+    let dx = 0;
+    let dy = 0;
+
+    const onMove = (ev: MouseEvent) => {
+      dx = ev.clientX - startX;
+      dy = ev.clientY - startY;
+    };
+    const onUp = async () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const img = resultImgRef.current;
+      const scale = img && img.clientWidth ? img.naturalWidth / img.clientWidth : 1;
+      const ddx = dx * scale;
+      const ddy = dy * scale;
+      if (Math.abs(ddx) < 1 && Math.abs(ddy) < 1) return; // ignore taps
+      const cur = offsets[face] || { dx: 0, dy: 0 };
+      const next = { ...offsets, [face]: { dx: cur.dx + ddx, dy: cur.dy + ddy } };
+      setOffsets(next);
+      setBusy(true);
+      setError(null);
+      try {
+        await composeWith(sid, next);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setBusy(false);
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   async function reset() {
     if (session) {
       try {
@@ -135,6 +182,7 @@ export default function Home() {
     setSelectedFace(null);
     setResultUrl(null);
     setError(null);
+    setDragTarget(null);
   }
 
   const assignedCount = faces.filter((f) => assign[f.index]).length;
@@ -231,19 +279,37 @@ export default function Home() {
           <h2 style={S.h2}>
             <span style={S.step}>3</span> Result
           </h2>
-          <img src={resultUrl} alt="result" style={S.result} />
+          <img
+            ref={resultImgRef}
+            src={resultUrl}
+            alt="result"
+            style={{
+              ...S.result,
+              cursor: dragTarget !== null ? "move" : "default",
+              userSelect: "none",
+            }}
+            draggable={false}
+            onMouseDown={onResultMouseDown}
+          />
 
-          <details style={{ marginTop: 16 }}>
+          <details style={{ marginTop: 16 }} open>
             <summary style={S.summary}>Adjust a monke (if two overlap or one sits off)</summary>
             <p style={S.label}>
-              Overlapping monkes are separated automatically. Nudge any one by hand:
+              Overlapping monkes are separated automatically. To fine-tune, pick a
+              face below then <strong>drag it on the image</strong> — or use the arrows.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
                 .filter((f) => assign[f.index])
                 .map((f) => (
-                  <div key={f.index} style={S.nudgeRow}>
-                    <strong>#{f.index}</strong>
+                  <div key={f.index} style={S.nudgeRow(dragTarget === f.index)}>
+                    <button
+                      style={S.facePick(dragTarget === f.index)}
+                      onClick={() => setDragTarget(dragTarget === f.index ? null : f.index)}
+                      title="select, then drag on the image"
+                    >
+                      #{f.index} {dragTarget === f.index ? "✋" : ""}
+                    </button>
                     <button style={S.arrow} onClick={() => nudge(f.index, -NUDGE, 0)} disabled={busy}>◀</button>
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       <button style={S.arrow} onClick={() => nudge(f.index, 0, -NUDGE)} disabled={busy}>▲</button>
@@ -253,6 +319,11 @@ export default function Home() {
                   </div>
                 ))}
             </div>
+            {dragTarget !== null && (
+              <p style={{ ...S.label, color: ui.accent }}>
+                Dragging face #{dragTarget}. Drag on the image above to move its monke.
+              </p>
+            )}
           </details>
 
           <div style={{ marginTop: 18, display: "flex", gap: 14, alignItems: "center" }}>
@@ -371,14 +442,25 @@ const S: Record<string, any> = {
   },
   result: { maxWidth: "100%", borderRadius: 12, display: "block" },
   summary: { cursor: "pointer", fontWeight: 600, color: ui.ivory },
-  nudgeRow: {
+  nudgeRow: (active: boolean) => ({
     display: "flex",
     alignItems: "center",
     gap: 6,
     background: ui.bg,
     padding: "8px 12px",
     borderRadius: 10,
-  },
+    border: `2px solid ${active ? ui.accent : "transparent"}`,
+  }),
+  facePick: (active: boolean) => ({
+    minWidth: 44,
+    height: 30,
+    borderRadius: 7,
+    border: `1px solid ${active ? ui.accent : ui.panelBorder}`,
+    background: active ? ui.accent : ui.panel,
+    color: active ? ui.accentText : ui.ivory,
+    fontWeight: 700,
+    cursor: "pointer",
+  }),
   arrow: {
     width: 30,
     height: 30,
