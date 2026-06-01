@@ -120,6 +120,35 @@ For real use, prefer `--match`.
 
 ---
 
+## Web app (no terminal needed)
+
+A browser version for ambassadors who don't want the command line: upload a
+photo, the app shows the detected faces, you click a face then click a monke to
+pair them, and download the result. The photo is processed on the server and
+**deleted right after** — never stored or shared.
+
+Run it locally (two terminals):
+
+```bash
+# 1. backend (FastAPI) — reuses the same Python core as the CLI
+uv pip install -e ".[dev,web]"
+uv run uvicorn apps.api.main:app --reload --port 8000
+
+# 2. frontend (Next.js)
+cd apps/web
+cp .env.local.example .env.local   # points at http://localhost:8000
+npm install
+npm run dev                        # http://localhost:3000
+```
+
+The frontend (`apps/web`) is built to deploy to Vercel; the backend
+(`apps/api`) runs the ML work and deploys to a host that allows it
+(Railway/Fly/own VM). v1 is **manual pairing** — automatic recognition (reusing
+the `--match` engine) is a planned follow-up. See
+`docs/specs/monkemask-web.md`.
+
+---
+
 ## How it works
 
 ```
