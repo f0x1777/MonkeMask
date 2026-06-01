@@ -19,7 +19,16 @@
 
 :root {
   --bg: #184623;
+  --bg-2: #103018;
+  --panel: #1f5630;
+  --panel-border: #2c6b40;
   --text: #f3efcd;
+  --text-dim: rgba(243, 239, 205, 0.72);
+  --accent: #ffc919;
+  --accent-text: #184623;
+  --good: #86c994;
+  --blue: #2f8dcc;
+  --danger: #b4452f;
 }
 
 * {
@@ -30,12 +39,131 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
   color: var(--text);
   font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* layered radial glows over the brand green for depth */
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(47, 141, 204, 0.18), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgba(255, 201, 25, 0.1), transparent 55%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
 button {
   font-family: inherit;
+}
+
+/* ---------- animations ---------- */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  70% {
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(3deg);
+  }
+}
+@keyframes drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 240px 240px;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.5s ease-out both;
+}
+.pop-in {
+  animation: popIn 0.35s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* hover lift for primary CTAs (inline styles can't do :hover) */
+.lift {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, filter 0.2s ease-out;
+}
+.lift:hover {
+  transform: translateY(-2px) scale(1.02);
+  filter: brightness(1.05);
+}
+.lift:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* footer link hover */
+footer a:hover {
+  background: rgba(255, 201, 25, 0.16) !important;
+  border-color: #ffc919 !important;
+}
+
+/* generic focus-visible ring for keyboard nav (a11y) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+label:focus-within {
+  outline: 3px solid #ffc919;
+  outline-offset: 2px;
+}
+
+/* subtle "MONKE MONKE" pattern wash behind the hero */
+.monke-wash {
+  position: fixed;
+  inset: 0;
+  background-image: url("/brand/monke-pattern.png");
+  background-size: 360px;
+  opacity: 0.05;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: drift 40s linear infinite;
+  z-index: 0;
 }

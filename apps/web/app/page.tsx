@@ -287,39 +287,68 @@ export default function Home() {
   const assignedCount = faces.filter((f) => assign[f.index]).length;
 
   return (
-    <main style={S.page}>
-      <header style={S.header}>
-        <img src="/brand/monkedao-icon.png" alt="MonkeDAO" style={{ height: 44 }} />
-        <div>
-          <h1 style={S.h1}>MonkeMask</h1>
-          <p style={S.tagline}>Cover faces with monkes. No editing skills needed.</p>
-        </div>
-      </header>
+    <>
+      <div className="monke-wash" />
+      <main style={S.page}>
+        {/* ---------- HERO ---------- */}
+        <header style={S.hero} className="fade-up">
+          <img
+            src="/brand/monkedao-logo-horizontal.png"
+            alt="MonkeDAO"
+            style={S.heroLogo}
+          />
+          <h1 style={S.h1}>
+            Monke<span style={{ color: ui.accent }}>Mask</span>{" "}
+            <span style={S.heroMonke} aria-hidden>
+              <img src="/brand/daojones.png" alt="" style={{ width: 54, height: 54 }} />
+            </span>
+          </h1>
+          <p style={S.tagline}>
+            Cover every face in a group photo with a monke — <strong>no editing
+            skills needed.</strong> 🐵
+          </p>
+          <div style={S.badges}>
+            <span style={S.badge}>🔒 100% private</span>
+            <span style={S.badge}>⚡ Auto face detection</span>
+            <span style={S.badge}>🎨 Your own monkes</span>
+            <span style={S.badge}>🇦🇷 by MonkeDAO Argentina</span>
+          </div>
+        </header>
 
-      <p style={S.privacy}>
-        🔒 Your photo is processed on the server and deleted right after — never
-        stored or shared.
-      </p>
+        <p style={S.privacy}>
+          🔒 Your photo is processed on the server and deleted right after — never
+          stored or shared.
+        </p>
 
-      {error && <div style={S.errorBox}>⚠️ {error}</div>}
+        {error && (
+          <div style={S.errorBox} className="pop-in">
+            ⚠️ {error}
+          </div>
+        )}
 
-      {/* Step 1 */}
-      <section style={S.card}>
-        <h2 style={S.h2}>
-          <span style={S.step}>1</span> Upload the event photo
-        </h2>
-        <label style={S.upload}>
-          {faces.length ? "Choose a different photo" : "Choose a photo"}
-          <input type="file" accept="image/*" onChange={onPhoto} disabled={busy} hidden />
-        </label>
-      </section>
-
-      {/* Step 2 */}
-      {faces.length > 0 && (
-        <section style={S.card}>
+        {/* Step 1 */}
+        <section style={S.card} className="fade-up">
           <h2 style={S.h2}>
-            <span style={S.step}>2</span> Pair each face with a monke
+            <span style={S.step}>1</span> 📸 Upload the event photo
+          </h2>
+          <label style={S.upload} className="lift">
+            {faces.length ? "🔄 Choose a different photo" : "⬆️ Choose a photo"}
+            <input type="file" accept="image/*" onChange={onPhoto} disabled={busy} hidden />
+          </label>
+          {busy && !faces.length && (
+            <span style={S.spinnerRow}>
+              <span style={S.spinner} /> detecting faces…
+            </span>
+          )}
+        </section>
+
+        {/* Step 2 */}
+        {faces.length > 0 && (
+          <section style={S.card} className="fade-up">
+          <h2 style={S.h2}>
+            <span style={S.step}>2</span> 🐵 Pair each face with a monke
             <span style={S.counter}>
+              {assignedCount === faces.length ? "✅ " : ""}
               {assignedCount}/{faces.length} done
             </span>
           </h2>
@@ -437,17 +466,23 @@ export default function Home() {
             {suggestMsg && <p style={{ ...S.label, color: ui.good }}>{suggestMsg}</p>}
           </details>
 
-          <button onClick={generate} disabled={busy} style={S.primary}>
-            {busy ? "Working…" : "Generate →"}
+          <button onClick={generate} disabled={busy} style={S.primary} className="lift">
+            {busy ? (
+              <>
+                <span style={S.spinner} /> Working…
+              </>
+            ) : (
+              "✨ Generate"
+            )}
           </button>
         </section>
       )}
 
       {/* Step 3 */}
       {resultUrl && (
-        <section style={S.card}>
+        <section style={S.card} className="fade-up">
           <h2 style={S.h2}>
-            <span style={S.step}>3</span> Result
+            <span style={S.step}>3</span> 🎉 Result
           </h2>
           <img
             ref={resultImgRef}
@@ -496,47 +531,130 @@ export default function Home() {
             )}
           </details>
 
-          <div style={{ marginTop: 18, display: "flex", gap: 14, alignItems: "center" }}>
-            <a href={resultUrl} download="monkemasked.png" style={S.download}>
-              ⬇ Download
+          <div style={{ marginTop: 18, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <a href={resultUrl} download="monkemasked.png" style={S.download} className="lift">
+              ⬇️ Download
             </a>
             <button onClick={reset} style={S.ghost}>
-              Start over
+              ↺ Start over
             </button>
           </div>
         </section>
       )}
 
-      <footer style={S.footer}>
-        Built by{" "}
-        <a href="https://github.com/f0x1777" style={{ color: ui.accent }}>
-          @f0x1777
-        </a>{" "}
-        of the Chapter of Argentina 🇦🇷 to the rest of the world.
-      </footer>
-    </main>
+        {/* ---------- FOOTER ---------- */}
+        <footer style={S.footer}>
+          <img src="/brand/monkedao-icon.png" alt="MonkeDAO" style={{ height: 40, opacity: 0.9 }} />
+          <p style={S.footerTagline}>
+            <strong>MonkeMask</strong> — privacy for the troop. 🐵💚
+          </p>
+          <div style={S.footerLinks}>
+            <a href="https://monkedao.io" target="_blank" rel="noreferrer" style={S.footerLink}>
+              🌐 MonkeDAO
+            </a>
+            <a href="https://github.com/f0x1777/MonkeMask" target="_blank" rel="noreferrer" style={S.footerLink}>
+              💻 GitHub
+            </a>
+            <a href="https://solanamonkey.business" target="_blank" rel="noreferrer" style={S.footerLink}>
+              🐒 SMB
+            </a>
+          </div>
+          <p style={S.footerCredit}>
+            Built by{" "}
+            <a href="https://github.com/f0x1777" target="_blank" rel="noreferrer" style={{ color: ui.accent, fontWeight: 700 }}>
+              @f0x1777
+            </a>{" "}
+            of the Chapter of Argentina 🇦🇷 — to the rest of the world. 🌎
+          </p>
+        </footer>
+      </main>
+    </>
   );
 }
 
 const S: Record<string, any> = {
-  page: { maxWidth: 880, margin: "0 auto", padding: "40px 20px 60px" },
-  header: { display: "flex", alignItems: "center", gap: 16, marginBottom: 8 },
-  h1: { margin: 0, fontSize: 38, fontWeight: 700, letterSpacing: -1 },
-  tagline: { margin: "2px 0 0", color: ui.textDim, fontSize: 15 },
-  privacy: { color: ui.textDim, fontSize: 14, margin: "8px 0 24px" },
+  page: {
+    maxWidth: 880,
+    margin: "0 auto",
+    padding: "48px 20px 40px",
+    position: "relative",
+    zIndex: 1,
+  },
+  hero: {
+    textAlign: "center",
+    marginBottom: 28,
+  },
+  heroLogo: { height: 30, opacity: 0.85, marginBottom: 18 },
+  h1: {
+    margin: 0,
+    fontSize: 52,
+    fontWeight: 700,
+    letterSpacing: -2,
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  heroMonke: { display: "inline-flex", animation: "float 4s ease-in-out infinite" },
+  tagline: {
+    margin: "14px auto 0",
+    color: ui.text,
+    fontSize: 18,
+    maxWidth: 520,
+    lineHeight: 1.5,
+  },
+  badges: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  badge: {
+    background: "rgba(243,239,205,0.08)",
+    border: `1px solid ${ui.panelBorder}`,
+    color: ui.text,
+    fontSize: 13,
+    fontWeight: 500,
+    padding: "6px 12px",
+    borderRadius: 999,
+  },
+  privacy: {
+    color: ui.textDim,
+    fontSize: 13,
+    margin: "0 0 24px",
+    textAlign: "center",
+  },
   errorBox: {
     background: ui.danger,
     color: "#fff",
     padding: "12px 16px",
     borderRadius: 10,
     marginBottom: 20,
+    fontWeight: 500,
   },
   card: {
-    background: ui.panel,
+    background: "rgba(31,86,48,0.7)",
+    backdropFilter: "blur(6px)",
+    WebkitBackdropFilter: "blur(6px)",
     border: `1px solid ${ui.panelBorder}`,
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 18,
+    padding: 26,
     marginBottom: 20,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+  },
+  spinnerRow: { display: "inline-flex", alignItems: "center", gap: 8, marginLeft: 14, color: ui.textDim, fontSize: 14 },
+  spinner: {
+    display: "inline-block",
+    width: 16,
+    height: 16,
+    border: `2px solid rgba(24,70,35,0.4)`,
+    borderTopColor: ui.accentText,
+    borderRadius: "50%",
+    animation: "spin 0.7s linear infinite",
+    verticalAlign: "middle",
   },
   h2: { marginTop: 0, fontSize: 20, display: "flex", alignItems: "center", gap: 10 },
   step: {
@@ -583,10 +701,12 @@ const S: Record<string, any> = {
     display: "inline-block",
     background: ui.accent,
     color: ui.accentText,
-    padding: "12px 22px",
-    borderRadius: 10,
+    padding: "13px 24px",
+    borderRadius: 12,
     fontWeight: 700,
     cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(255,201,25,0.25)",
+    transition: "transform 0.2s ease-out, box-shadow 0.2s ease-out",
   },
   uploadSmall: {
     display: "inline-block",
@@ -601,14 +721,19 @@ const S: Record<string, any> = {
   },
   primary: {
     marginTop: 22,
-    padding: "14px 28px",
-    fontSize: 16,
-    borderRadius: 10,
+    padding: "15px 32px",
+    fontSize: 17,
+    borderRadius: 12,
     border: "none",
     background: ui.accent,
     color: ui.accentText,
     fontWeight: 700,
     cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    boxShadow: "0 8px 20px rgba(255,201,25,0.3)",
+    transition: "transform 0.2s ease-out, box-shadow 0.2s ease-out",
   },
   input: {
     background: ui.bg,
@@ -660,18 +785,45 @@ const S: Record<string, any> = {
   download: {
     background: ui.good,
     color: ui.accentText,
-    padding: "12px 22px",
-    borderRadius: 10,
+    padding: "13px 26px",
+    borderRadius: 12,
     fontWeight: 700,
     textDecoration: "none",
+    display: "inline-block",
+    boxShadow: "0 6px 16px rgba(134,201,148,0.28)",
+    transition: "transform 0.2s ease-out",
   },
   ghost: {
     background: "transparent",
     color: ui.textDim,
     border: `1px solid ${ui.panelBorder}`,
     padding: "12px 18px",
-    borderRadius: 10,
+    borderRadius: 12,
     cursor: "pointer",
   },
-  footer: { color: ui.textDim, fontSize: 13, marginTop: 28, textAlign: "center" },
+  footer: {
+    marginTop: 48,
+    paddingTop: 28,
+    borderTop: `1px solid ${ui.panelBorder}`,
+    textAlign: "center",
+  },
+  footerTagline: { color: ui.text, fontSize: 16, margin: "12px 0 4px" },
+  footerLinks: {
+    display: "flex",
+    gap: 18,
+    justifyContent: "center",
+    flexWrap: "wrap",
+    margin: "14px 0",
+  },
+  footerLink: {
+    color: ui.text,
+    textDecoration: "none",
+    fontWeight: 500,
+    fontSize: 15,
+    padding: "6px 14px",
+    borderRadius: 999,
+    border: `1px solid ${ui.panelBorder}`,
+    background: "rgba(243,239,205,0.06)",
+  },
+  footerCredit: { color: ui.textDim, fontSize: 13, marginTop: 14 },
 };

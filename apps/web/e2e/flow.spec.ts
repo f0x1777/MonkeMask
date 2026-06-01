@@ -8,7 +8,7 @@ const MONKE = path.join(ROOT, "MonkeDAO_DAOJones.png");
 
 test("full flow: upload photo, pair a monke, generate, download", async ({ page }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "MonkeMask" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Monke.*Mask/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("01-landing.png"), fullPage: true });
 
   // Step 1: upload the event photo (hidden input behind a label).
