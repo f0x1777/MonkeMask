@@ -1,12 +1,16 @@
-# MonkePic 🐵
+# MonkeMask 🐵
 
-**Local, offline face anonymizer.** Drop in a photo and MonkePic covers every
+**Local, offline face anonymizer.** Drop in a photo and MonkeMask covers every
 face with a [Solana Monkey Business](https://solanamonkey.business/) (SMB) monke —
 background removed, scaled to the head, positioned, and rotated to the head tilt.
 
 Built for [MonkeDAO Argentina](https://monkedao.io/) to share event photos
 without exposing people's faces. Everything runs on your machine — **no photo
 ever leaves your computer.**
+
+> Designed as a tool for **local ambassadors with little to no photo-editing
+> skill**: no Photoshop, no manual masking — point it at a group photo and it does
+> the whole job (detect → cover → match) on its own.
 
 ---
 
