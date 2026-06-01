@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 
 from monkepic.background import (
+    clean_background_fringe,
     ensure_transparent,
     has_alpha,
     is_solid_background,
@@ -161,6 +162,25 @@ def test_palette_border_cutout_core_protects_bg_coloured_subject():
     out = np.array(palette_border_cutout(img, core=core))
     assert out[30, 30, 3] == 255  # bg-coloured pixel protected by core
     assert out[5, 5, 3] == 0  # but plain bg outside core is removed
+
+
+def test_clean_background_fringe_eats_residual_bg_but_not_subject():
+    # A flat pastel field with a red subject strip. After a partial cut (top rows
+    # already transparent), the residual pastel fringe — reachable from the
+    # transparent exterior and background-coloured — must be eaten, while the red
+    # strip (not a background colour) is kept.
+    bgc = [200, 200, 210]
+    img_arr = np.full((40, 40, 3), bgc, np.uint8)
+    img_arr[10:14, 10:30] = [200, 30, 30]  # red subject strip (not a bg colour)
+    img = Image.fromarray(img_arr, "RGB")
+
+    rgba = np.dstack([img_arr, np.full((40, 40), 255, np.uint8)]).astype(np.uint8)
+    rgba[:5, :, 3] = 0  # exterior already cut (transparent)
+    out = np.array(clean_background_fringe(img, Image.fromarray(rgba, "RGBA")))
+
+    assert out[6, 20, 3] == 0  # residual pastel fringe eaten (reachable + bg-coloured)
+    assert out[11, 20, 3] == 255  # red subject kept (not a bg colour)
+    assert out[39, 20, 3] == 0  # bg below the strip reached around it and removed
 
 
 def test_load_smb_silhouette_returns_consistent_masks():

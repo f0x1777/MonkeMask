@@ -120,6 +120,49 @@ def palette_border_cutout(
     return Image.fromarray(out, "RGBA")
 
 
+def clean_background_fringe(
+    img: Image.Image, cut: Image.Image, tol: int = 52, dark_lum: int = 105,
+    min_frac: float = 0.02,
+) -> Image.Image:
+    """Second pass: eat residual background still clinging to an already-cut monke.
+
+    After the palette cut + silhouette refinement, a halo of background-coloured
+    pixels can survive around the dark outline (the SMB checker/gradient dithered
+    against the hair, or a stray blob the silhouette rescued). Flood INWARD from the
+    cut's transparent region, removing any opaque pixel that is within ``tol`` of the
+    border background palette and not part of the dark monke outline. The flood is
+    walled by that dark outline, so it strips the outer halo without entering the
+    subject (the face/suit enclosed by the outline stays). ``img`` is the original
+    (for colours), ``cut`` the current RGBA."""
+    rgb = np.array(img.convert("RGB"), dtype=np.int16)
+    h, w = rgb.shape[:2]
+    lum = rgb.mean(axis=2)
+    palette = _border_palette(rgb, dark_lum, min_frac)
+    rgba = np.array(cut.convert("RGBA"))
+    if palette is None:
+        return Image.fromarray(rgba, "RGBA")
+    dist = np.abs(rgb[:, :, None, :] - palette[None, None, :, :]).max(axis=3)
+    opaque = rgba[:, :, 3] > 16
+    # Pixels eligible to be eaten: opaque, background-coloured, not the dark outline.
+    removable = (dist.min(axis=2) <= tol) & (lum >= dark_lum) & opaque
+    transparent = ~opaque
+    # Grow the transparent region into adjacent removable pixels until it stops
+    # (vectorised flood: each dilation step adds one ring, bounded by the outline).
+    import cv2
+
+    kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
+    reach = transparent.astype(np.uint8)
+    allowed = transparent | removable
+    while True:
+        grown = (cv2.dilate(reach, kernel) > 0) & allowed
+        if int(grown.sum()) == int(reach.sum()):
+            break
+        reach = grown.astype(np.uint8)
+    eaten = (reach > 0) & removable
+    rgba[eaten, 3] = 0
+    return Image.fromarray(rgba, "RGBA")
+
+
 def combine_with_silhouette(
     img: Image.Image, core: np.ndarray, far: np.ndarray
 ) -> Image.Image:
@@ -278,8 +321,9 @@ def ensure_transparent(
     - solid-colour cutout (flat background);
     - gradient/checker background: a palette-aware border cutout (handles the SMB
       pastel-gradient + checker-dot background), refined by a consensus monke
-      silhouette. ``silhouette`` is ``"auto"`` (load the bundled SMB template),
-      an explicit ``(core, far)`` pair, or ``None`` (no silhouette refinement).
+      silhouette, then a fringe-cleanup pass that strips any residual background halo.
+      ``silhouette`` is ``"auto"`` (load the bundled SMB template), an explicit
+      ``(core, far)`` pair, or ``None`` (no silhouette refinement).
     Trimming ensures the monke actually covers the head."""
     tier = select_tier(img, tol)
     if tier == "alpha":
@@ -300,4 +344,6 @@ def ensure_transparent(
             )
         else:
             cut = palette_border_cutout(img)
+        # Second pass: strip any background halo still clinging to the outline.
+        cut = clean_background_fringe(img, cut)
     return trim_transparent(cut)
