@@ -4,7 +4,7 @@
 face with a [Solana Monkey Business](https://solanamonkey.business/) (SMB) monke —
 background removed, scaled to the head, positioned, and rotated to the head tilt.
 
-Built for [MonkeDAO Argentina](https://monkedao.io/) to share event photos
+Built for [MonkeDAO](https://monkedao.io/) to share event photos
 without exposing people's faces.
 
 > Built by [@f0x1777](https://x.com/f0x1777) of the Argentina Chapter 🇦🇷
