@@ -4,12 +4,48 @@ import shutil
 from pathlib import Path
 
 from . import geometry
-from .background import ensure_transparent
+from .background import (
+    build_silhouette,
+    ensure_transparent,
+    has_alpha,
+    is_solid_background,
+)
 from .compositor import composite
 from .crops import export_crops
 from .layout import depth_order, resolve_overlaps
 from .loader import list_images, load_image, save_image
 from .selector import MonkeSelector
+
+
+def _silhouette_for(monke_paths, monke_pool=None):
+    """Build a consensus silhouette from the solid-background monkes available, so
+    gradient-background monkes can be reconstructed from the shared SMB shape.
+    Returns None if there aren't enough clean examples."""
+    candidates = []
+    if monke_pool is not None:
+        try:
+            candidates = list_images(monke_pool)
+        except Exception:
+            candidates = []
+    # Always include the chosen monkes themselves as fallback examples.
+    seen = set()
+    paths = []
+    for p in list(candidates) + [Path(p) for p in monke_paths]:
+        if str(p) not in seen:
+            seen.add(str(p))
+            paths.append(p)
+
+    solids = []
+    for p in paths:
+        try:
+            im = load_image(p)
+        except Exception:
+            continue
+        if not has_alpha(im) and is_solid_background(im):
+            solids.append(im)
+    if len(solids) < 5:  # too few to form a reliable consensus
+        return None
+    return build_silhouette(solids)
 
 
 def process_image(
@@ -57,7 +93,11 @@ def process_image(
         monke_paths = MonkeSelector(pool, seed=seed).assign(len(regions))
 
     # Compute every placement first, nudge overlapping monkes apart, then composite.
-    monkes = [ensure_transparent(load_image(p)) for p in monke_paths]
+    # A consensus silhouette (from solid-bg monkes) reconstructs gradient-bg ones.
+    silhouette = _silhouette_for(monke_paths, monke_pool)
+    monkes = [
+        ensure_transparent(load_image(p), silhouette=silhouette) for p in monke_paths
+    ]
     placements = [
         geometry.placement_for(r, m.width, m.height, margin=margin, rotate=rotate)
         for r, m in zip(regions, monkes)
