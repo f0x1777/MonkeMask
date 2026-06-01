@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -60,3 +62,48 @@ def build_gallery(ourmonke_dir, embedder, detector) -> list[PersonEntry]:
         mean = mean / max(float(np.linalg.norm(mean)), 1e-12)
         entries.append(PersonEntry(name, monke, tuple(mean.tolist()), len(vecs)))
     return entries
+
+
+def _gallery_fingerprint(ourmonke_dir: Path) -> str:
+    """Hash of every face photo's path + mtime, so the cache invalidates when
+    reference photos are added/removed/changed."""
+    root = Path(ourmonke_dir)
+    parts: list[str] = []
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        if _person_name(folder) is None:
+            continue
+        _monke, faces = parse_person_folder(folder)
+        for f in faces:
+            parts.append(f"{f}:{f.stat().st_mtime_ns}")
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
+def load_or_build_gallery(
+    ourmonke_dir, embedder, detector, cache_dir=".monke-cache", rebuild: bool = False
+) -> list[PersonEntry]:
+    """Return the gallery, using a cache keyed by the reference-photo fingerprint.
+    Rebuilds when photos change or ``rebuild=True``."""
+    cache_dir = Path(cache_dir)
+    cache_file = cache_dir / "gallery.json"
+    fp = _gallery_fingerprint(ourmonke_dir)
+
+    if not rebuild and cache_file.exists():
+        data = json.loads(cache_file.read_text())
+        if data.get("fingerprint") == fp:
+            return [
+                PersonEntry(e["name"], Path(e["monke_path"]),
+                            tuple(e["embedding"]), e["n_refs"])
+                for e in data["entries"]
+            ]
+
+    gallery = build_gallery(ourmonke_dir, embedder, detector)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({
+        "fingerprint": fp,
+        "entries": [
+            {"name": e.name, "monke_path": str(e.monke_path),
+             "embedding": list(e.embedding), "n_refs": e.n_refs}
+            for e in gallery
+        ],
+    }))
+    return gallery

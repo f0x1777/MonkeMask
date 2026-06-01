@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 
-from monkepic.gallery import build_gallery, parse_person_folder
+from monkepic.gallery import build_gallery, load_or_build_gallery, parse_person_folder
 from monkepic.types import FaceRegion
 
 
@@ -84,3 +84,32 @@ def test_build_gallery_skips_unreadable_face(tmp_path):
 
     gallery = build_gallery(tmp_path, OneBadEmbedder(), FakeDetector())
     assert gallery == []  # only face failed -> person not enrolled
+
+
+def test_cache_reuse_then_rebuild_on_change(tmp_path):
+    nico = tmp_path / "01 - Nico"
+    _img(nico / "Nico - SMB #1.png")
+    _img(nico / "face_a.png")
+    cache = tmp_path / ".cache"
+
+    emb1 = FakeEmbedder()
+    g1 = load_or_build_gallery(tmp_path, emb1, FakeDetector(), cache_dir=cache)
+    assert emb1.calls == 1
+    assert {p.name for p in g1} == {"Nico"}
+
+    # second call: cache hit, embedder NOT called again
+    emb2 = FakeEmbedder()
+    g2 = load_or_build_gallery(tmp_path, emb2, FakeDetector(), cache_dir=cache)
+    assert emb2.calls == 0
+    assert {p.name for p in g2} == {"Nico"}
+
+    # add a new face -> cache invalidated -> rebuild
+    _img(nico / "face_b.png")
+    emb3 = FakeEmbedder()
+    load_or_build_gallery(tmp_path, emb3, FakeDetector(), cache_dir=cache)
+    assert emb3.calls == 2
+
+    # force rebuild ignores cache
+    emb4 = FakeEmbedder()
+    load_or_build_gallery(tmp_path, emb4, FakeDetector(), cache_dir=cache, rebuild=True)
+    assert emb4.calls == 2
