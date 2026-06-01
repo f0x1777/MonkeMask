@@ -1,19 +1,33 @@
 # MonkeMask 🐵
 
-**Local, offline face anonymizer.** Drop in a photo and MonkeMask covers every
+**Face anonymizer for group photos.** Drop in a photo and MonkeMask covers every
 face with a [Solana Monkey Business](https://solanamonkey.business/) (SMB) monke —
 background removed, scaled to the head, positioned, and rotated to the head tilt.
 
 Built for [MonkeDAO Argentina](https://monkedao.io/) to share event photos
-without exposing people's faces. Everything runs on your machine — **no photo
-ever leaves your computer.**
+without exposing people's faces.
 
-> Built by [@f0x1777](https://github.com/f0x1777) of the Argentina Chapter 🇦🇷
+> Built by [@f0x1777](https://x.com/f0x1777) of the Argentina Chapter 🇦🇷
 > for the rest of the world. 🌎
 
-> Designed as a tool for **local ambassadors with little to no photo-editing
-> skill**: no Photoshop, no manual masking — point it at a group photo and it does
-> the whole job (detect → recognize → cover) on its own.
+## ▶️ Try it now (no install)
+
+**[monkemask.vercel.app](https://monkemask.vercel.app)** — a hosted web app. Upload
+a group photo, pair each face with a monke (or auto-suggest), and download the
+result. The photo is processed on the server and **deleted right after** — never
+stored or shared.
+
+## 🔒 Or run it yourself (100% private)
+
+Prefer total privacy? Run it locally — **fully self-hosted, no photo ever leaves
+your machine.** The CLI and the same web app both run offline (the only network
+access is a one-time ML model download). Self-hosting also lets you **feed it your
+own people** so it recognizes who's who and gives each person *their* monke
+automatically. See [Install](#install) and [Web app](#web-app-no-terminal-needed).
+
+> Designed for **local ambassadors with little to no photo-editing skill**: no
+> Photoshop, no manual masking — point it at a group photo and it does the whole
+> job (detect → recognize → cover) on its own.
 
 ---
 

@@ -12,6 +12,14 @@ from pathlib import Path
 _PREFIX = "monkemask-"
 
 
+def _is_sid(sid: str) -> bool:
+    """A session id is a 32-char uuid4 hex — guards re-adoption of arbitrary dirs."""
+    try:
+        return len(sid) == 32 and int(sid, 16) >= 0
+    except (ValueError, TypeError):
+        return False
+
+
 class SessionStore:
     """Manages per-flow tempdirs. ``clock`` is injectable for testing the TTL."""
 
@@ -36,6 +44,12 @@ class SessionStore:
         return self._root / f"{_PREFIX}{sid}"
 
     def exists(self, sid: str) -> bool:
+        # Re-adopt a session whose tempdir still exists but isn't in memory yet
+        # (e.g. the worker process restarted but the filesystem persisted). This
+        # avoids spurious "unknown session" right after a restart.
+        if sid not in self._created and self.path(sid).is_dir() and _is_sid(sid):
+            self._created[sid] = self._clock()
+            self.people.setdefault(sid, [])
         return sid in self._created and self.path(sid).is_dir()
 
     def delete(self, sid: str) -> None:

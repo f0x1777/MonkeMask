@@ -35,6 +35,15 @@ export default function Home() {
   const [dragTarget, setDragTarget] = useState<number | null>(null);
   const resultImgRef = useRef<HTMLImageElement | null>(null);
 
+  // Turn backend errors into a user-friendly message (esp. expired sessions).
+  function friendlyError(msg: string): string {
+    if (/unknown or expired session/i.test(msg))
+      return "Your session expired (the server may have restarted). Please upload the photo again to start over.";
+    if (/failed to fetch/i.test(msg))
+      return "Couldn't reach the server. It may be waking up — wait a moment and try again.";
+    return msg;
+  }
+
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -247,7 +256,7 @@ export default function Home() {
       if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
       setResultUrl(URL.createObjectURL(await r.blob()));
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setBusy(false);
     }
@@ -385,7 +394,7 @@ export default function Home() {
             </span>
           </h1>
           <p style={S.tagline}>
-            Get your event photo <strong>ready for socials</strong> in one second —
+            Get your event photo <strong>ready for socials</strong> in seconds —
             no editing headaches. 🐵
           </p>
           <div style={S.badges}>
@@ -476,17 +485,28 @@ export default function Home() {
             <input type="file" accept="image/*" multiple onChange={onMonkes} disabled={busy} hidden />
           </label>
           <div style={S.grid}>
-            {monkes.map((m) => (
-              <button
-                key={m.id}
-                style={S.thumbBtn(false, false)}
-                onClick={(e) => pickMonke(m.id, e.currentTarget)}
-                disabled={selectedFace === null}
-                title={selectedFace === null ? "select a face first" : `assign to face #${selectedFace}`}
-              >
-                <img src={m.thumb} alt={m.id} style={S.thumbImg} />
-              </button>
-            ))}
+            {monkes.map((m) => {
+              const usedCount = Object.values(assign).filter((id) => id === m.id).length;
+              const used = usedCount > 0;
+              return (
+                <button
+                  key={m.id}
+                  style={S.monkeBtn(used)}
+                  onClick={(e) => pickMonke(m.id, e.currentTarget)}
+                  disabled={selectedFace === null}
+                  title={
+                    selectedFace === null
+                      ? "select a face first"
+                      : used
+                        ? `already used — assign to face #${selectedFace} too`
+                        : `assign to face #${selectedFace}`
+                  }
+                >
+                  <img src={m.thumb} alt={m.id} style={{ ...S.thumbImg, opacity: used ? 0.45 : 1 }} />
+                  {used && <span style={S.usedBadge}>✓ used{usedCount > 1 ? ` ×${usedCount}` : ""}</span>}
+                </button>
+              );
+            })}
           </div>
 
           {/* Auto-suggest (optional) */}
@@ -663,7 +683,7 @@ export default function Home() {
           </div>
           <p style={S.footerCredit}>
             Built by{" "}
-            <a href="https://github.com/f0x1777" target="_blank" rel="noreferrer" style={{ color: ui.accent, fontWeight: 700 }}>
+            <a href="https://x.com/f0x1777" target="_blank" rel="noreferrer" style={{ color: ui.accent, fontWeight: 700 }}>
               @f0x1777
             </a>{" "}
             of the Argentina Chapter 🇦🇷 for the rest of the world. 🌎
@@ -821,6 +841,25 @@ const S: Record<string, any> = {
     background: "rgba(24,70,35,0.85)",
     color: ui.ivory,
     fontSize: 11,
+    padding: "1px 6px",
+    borderRadius: 6,
+  },
+  monkeBtn: (used: boolean) => ({
+    position: "relative",
+    padding: 0,
+    background: "transparent",
+    border: `3px solid ${used ? ui.good : "transparent"}`,
+    borderRadius: 12,
+    cursor: "pointer",
+  }),
+  usedBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    background: ui.good,
+    color: ui.accentText,
+    fontSize: 10,
+    fontWeight: 700,
     padding: "1px 6px",
     borderRadius: 6,
   },
