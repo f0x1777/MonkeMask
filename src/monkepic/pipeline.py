@@ -23,6 +23,7 @@ def process_image(
     seed: int | None = None,
     crops_dir=None,
     forced_monke=None,
+    choose_monke=None,
 ) -> Path:
     """Anonymize one photo: detect faces, cover each with a monke. Returns output path.
 
@@ -45,7 +46,9 @@ def process_image(
     if crops_dir is not None:
         export_crops(image, regions, crops_dir, src.stem)
 
-    if forced_monke is not None:
+    if choose_monke is not None:
+        monke_paths = [Path(p) for p in choose_monke(regions)]
+    elif forced_monke is not None:
         monke_paths = [Path(forced_monke)] * len(regions)
     else:
         pool = list_images(monke_pool)
