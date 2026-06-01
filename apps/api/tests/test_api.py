@@ -104,6 +104,46 @@ def test_recompose_with_offset_keeps_session(client):
     assert client.post("/api/compose", json=body).status_code == 200
 
 
+def test_layout_returns_cutouts_and_placements(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    mid = client.post(
+        "/api/monkes",
+        data={"session": sid},
+        files=[("files", ("g.png", _monke_bytes([0, 255, 0]), "image/png"))],
+    ).json()["monkes"][0]["id"]
+    r = client.post(
+        "/api/layout",
+        json={"session": sid, "assignments": [{"face_index": 0, "monke_id": mid}]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["image"] == {"w": 300, "h": 300}
+    assert len(body["items"]) == 1
+    it = body["items"][0]
+    assert it["face_index"] == 0
+    assert it["monke"].startswith("data:image/png;base64,")
+    for k in ("cx", "cy", "w", "h", "roll_deg", "z"):
+        assert k in it
+
+
+def test_layout_unknown_session_is_404(client):
+    assert client.post("/api/layout", json={"session": "nope", "assignments": []}).status_code == 404
+
+
+def test_photo_returns_png(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    pr = client.get("/api/photo", params={"session": sid})
+    assert pr.status_code == 200
+    assert pr.headers["content-type"] == "image/png"
+    assert np.array(Image.open(io.BytesIO(pr.content))).shape[:2] == (300, 300)
+
+
+def test_photo_unknown_session_is_404(client):
+    assert client.get("/api/photo", params={"session": "nope"}).status_code == 404
+
+
 def test_unsupported_upload_is_400(client):
     r = client.post("/api/detect", files={"photo": ("note.txt", b"hello", "text/plain")})
     assert r.status_code == 400

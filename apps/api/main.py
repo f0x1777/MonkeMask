@@ -282,6 +282,59 @@ async def compose(payload: dict):
     return Response(content=png, media_type="image/png")
 
 
+@app.get("/api/photo")
+def photo(session: str):
+    """The session's current photo (EXIF-normalised, re-encoded as PNG) so the web
+    client can use it as the live-preview background in the SAME pixel space as the
+    placements returned by /api/layout."""
+    store: SessionStore = app.state.sessions
+    if not store.exists(session):
+        raise HTTPException(404, "unknown or expired session")
+    from monkepic.loader import load_image
+
+    img = load_image(store.path(session) / "photo").convert("RGB")
+    import io as _io
+
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/layout")
+async def layout(payload: dict):
+    """Per-face cutouts + base placements for client-side live preview (no render).
+    Same assignment input as /api/compose, but returns JSON the browser overlays and
+    drags locally; only the final download hits /api/compose."""
+    store: SessionStore = app.state.sessions
+    sid = payload.get("session")
+    if not sid or not store.exists(sid):
+        raise HTTPException(404, "unknown or expired session")
+
+    from monkepic.types import FaceRegion
+
+    faces_meta = json.loads((store.path(sid) / "faces.json").read_text())
+    by_index = {
+        m["index"]: FaceRegion(m["x"], m["y"], m["w"], m["h"],
+                               tuple(m["left_eye"]), tuple(m["right_eye"]))
+        for m in faces_meta
+    }
+    monkes_dir = store.path(sid) / "monkes"
+    pairs = []
+    face_indices = []
+    for a in payload.get("assignments", []):
+        region = by_index.get(a["face_index"])
+        monke = monkes_dir / a["monke_id"]
+        if region is None or not monke.exists():
+            raise HTTPException(400, f"bad assignment: {a}")
+        pairs.append((region, monke))
+        face_indices.append(a["face_index"])
+
+    w, h, items = service.layout(store.path(sid) / "photo", pairs)
+    for fi, item in zip(face_indices, items):
+        item["face_index"] = fi
+    return {"image": {"w": w, "h": h}, "items": items}
+
+
 @app.delete("/api/session/{sid}", status_code=204)
 def delete_session(sid: str):
     app.state.sessions.delete(sid)

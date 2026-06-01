@@ -86,6 +86,27 @@ def test_compose_applies_manual_offset(tmp_path):
     assert arr[int(base.cy), shifted_x, 1] > 100
 
 
+def test_layout_returns_placements_and_cutouts(tmp_path):
+    photo = _save_photo(tmp_path)
+    green = _save_monke(tmp_path, "g.png", [0, 255, 0])
+    red = _save_monke(tmp_path, "r.png", [255, 0, 0])
+    # two faces: a small high one and a big low one (low+big paints on top -> z higher)
+    high = _region(40, 30, 40)
+    low = _region(180, 200, 80)
+    w, h, items = service.layout(photo, [(high, green), (low, red)])
+    assert (w, h) == (300, 300)
+    assert len(items) == 2
+    for it in items:
+        assert it["monke"].startswith("data:image/png;base64,")
+        for k in ("cx", "cy", "w", "h", "roll_deg", "z"):
+            assert k in it
+    # placements match the shared geometry (same as compose), before any offset
+    base_high = service.placement_for(high, Image.open(green))
+    assert items[0]["cx"] == base_high.cx and items[0]["cy"] == base_high.cy
+    # the lower+bigger face paints last -> strictly higher z than the upper one
+    assert items[1]["z"] > items[0]["z"]
+
+
 def test_enroll_person_averages_usable_refs(tmp_path):
     photo = _save_photo(tmp_path)  # reuse as a stand-in reference face image
     det = FakeDetector([_region(10, 10, 40)])

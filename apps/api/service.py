@@ -167,3 +167,32 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
     buf = io.BytesIO()
     canvas.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def layout(photo_path: str | Path, pairs, *, margin: float = 1.0,
+           rotate: bool = True, max_cutout: int = 512):
+    """Return the data the web client needs to preview placement WITHOUT a server
+    render: ``(image_w, image_h, items)``. Each item is the background-removed monke
+    (trimmed, as a data URL) plus its base placement in original-image pixels
+    (``cx, cy, w, h, roll_deg``) and paint order ``z`` (back-to-front rank). The
+    client overlays these and applies the user's live offsets in the browser; only
+    the final download calls :func:`compose`. Uses the SAME geometry as compose so the
+    preview matches the final render. ``offsets`` are intentionally NOT applied here —
+    they are the client's live state on top of these base placements."""
+    canvas = load_image(photo_path).convert("RGBA")
+    monkes = [ensure_transparent(load_image(mp)) for _, mp in pairs]
+    placements = [placement_for(r, m, margin=margin, rotate=rotate)
+                  for (r, _), m in zip(pairs, monkes)]
+    faces = [(r.x, r.y, r.w, r.h) for r, _ in pairs]
+    placements = resolve_overlaps(placements, faces)
+    zrank = {idx: rank for rank, idx in enumerate(depth_order(faces))}
+    items = []
+    for i, (m, pl) in enumerate(zip(monkes, placements)):
+        thumb = m.copy()
+        thumb.thumbnail((max_cutout, max_cutout))  # cap preview weight; w/h are in img px
+        items.append({
+            "monke": _png_b64(thumb),
+            "cx": pl.cx, "cy": pl.cy, "w": pl.w, "h": pl.h,
+            "roll_deg": pl.roll_deg, "z": zrank[i],
+        })
+    return canvas.width, canvas.height, items
