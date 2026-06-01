@@ -20,9 +20,14 @@ MAX_MONKES = 200
 # A detector is created lazily and reused (model load is expensive). Tests inject
 # their own via app.state.detector.
 app = FastAPI(title="MonkeMask API")
+# Allowed web origins: comma-separated MONKEMASK_WEB_ORIGIN (e.g. the Vercel URL),
+# plus localhost for dev. Vercel preview URLs are matched by regex.
+_origins = [o.strip() for o in os.environ.get("MONKEMASK_WEB_ORIGIN", "").split(",") if o.strip()]
+_origins += ["http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("MONKEMASK_WEB_ORIGIN", "http://localhost:3000")],
+    allow_origins=_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
