@@ -28,3 +28,34 @@ def test_list_images_recursive(tmp_path):
             p.write_text("x")
     found = {p.name for p in list_images(tmp_path)}
     assert found == {"a.png", "b.jpg", "c.webp"}
+
+
+def test_load_applies_exif_orientation(tmp_path):
+    # Build a landscape image with a unique top-left marker and tag it
+    # orientation=6 (rotate 90° CW on display). load_image must return it
+    # already rotated to portrait, with the marker moved to the top-right.
+    arr = np.zeros((100, 200, 3), dtype=np.uint8)  # H=100, W=200 (landscape)
+    arr[0:10, 0:10] = [255, 0, 0]  # red marker, top-left of the stored pixels
+    img = Image.fromarray(arr, "RGB")
+    exif = img.getexif()
+    exif[274] = 6  # Orientation: rotate 90° CW
+    src = tmp_path / "phone.jpg"
+    img.save(src, exif=exif)
+
+    loaded = load_image(src)
+    # 90° rotation swaps dimensions -> portrait
+    assert loaded.size == (100, 200)  # (W, H) = (100, 200)
+    a = np.array(loaded.convert("RGB"))
+
+    def is_red(px):
+        return px[0] > 200 and px[1] < 60 and px[2] < 60
+
+    # the red marker should now be at the TOP-RIGHT corner (JPEG-tolerant).
+    assert is_red(a[5, -5])
+    assert not is_red(a[5, 5])
+
+
+def test_load_no_exif_is_unchanged(tmp_path):
+    src = tmp_path / "plain.png"
+    Image.fromarray(np.full((12, 20, 3), 80, dtype=np.uint8), "RGB").save(src)
+    assert load_image(src).size == (20, 12)

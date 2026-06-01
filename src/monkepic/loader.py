@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Register AVIF/HEIC openers so Pillow can read SMB .avif files.
 try:
@@ -17,7 +17,11 @@ SUPPORTED = {".png", ".jpg", ".jpeg", ".webp", ".avif", ".heic", ".bmp"}
 
 
 def load_image(path: str | Path) -> Image.Image:
-    return Image.open(Path(path))
+    """Open an image and apply its EXIF orientation, so phone photos (which are
+    often stored sideways/upside-down with an orientation flag) come out upright.
+    Without this, faces are detected rotated and the monkes end up crooked."""
+    img = Image.open(Path(path))
+    return ImageOps.exif_transpose(img)
 
 
 def save_image(img: Image.Image, path: str | Path) -> None:
