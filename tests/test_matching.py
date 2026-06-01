@@ -53,20 +53,34 @@ def test_recognized_gets_own_monke_unknown_gets_generic(tmp_path):
     assert arr[50, 230, 2] > 100 and arr[50, 230, 0] < 100
 
 
-def test_background_face_not_covered(tmp_path):
+def test_background_face_not_covered(tmp_path, monkeypatch):
+    # Verify the tiny background face is dropped by the size filter — i.e. it never
+    # gets its own monke placement — rather than asserting on a pixel, which is
+    # fragile near a neighbouring monke's edge.
+    from monkepic import layout
+
     src = tmp_path / "in.png"
     Image.new("RGB", (300, 300), (10, 10, 10)).save(src)
     generic = _monke(tmp_path, "generic_blue.png", [0, 0, 255])
 
-    # two normal faces + one tiny background face
+    seen = {}
+
+    real_resolve = layout.resolve_overlaps
+
+    def spy(placements, faces, **kw):
+        seen["n"] = len(placements)
+        return real_resolve(placements, faces, **kw)
+
+    monkeypatch.setattr("monkepic.pipeline.resolve_overlaps", spy)
+
+    # two normal faces + one tiny background face (10px among 80px faces)
     regions = [_region(20, 20, 80), _region(180, 20, 80), _region(150, 150, 10)]
-    out = process_image_matched(
+    process_image_matched(
         src, [], generic, tmp_path / "out", FakeDetector(regions), FakeEmbedder(),
         threshold=0.5,
     )
-    arr = np.array(Image.open(out).convert("RGB"))
-    # tiny face center (155,155) stays dark (no monke)
-    assert arr[155, 155, 2] < 80
+    # only the two foreground faces produce a monke; the tiny one is filtered out
+    assert seen["n"] == 2
 
 
 def test_no_faces_copies_through(tmp_path):

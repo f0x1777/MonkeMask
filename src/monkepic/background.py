@@ -70,14 +70,35 @@ def _default_rembg(image: Image.Image) -> Image.Image:
     return remove(image)
 
 
+def trim_transparent(img: Image.Image, alpha_thresh: int = 16) -> Image.Image:
+    """Crop an RGBA image to the bounding box of its opaque content.
+
+    SMB monke PNGs carry large transparent padding (often ~20-30% at the top and
+    none at the bottom). Without trimming, scaling+centering the WHOLE PNG over a
+    head leaves the monke too small and shifted down, exposing the forehead/eyes.
+    Trimming makes the visible monke fill the head box."""
+    rgba = img.convert("RGBA")
+    alpha = np.array(rgba)[:, :, 3]
+    ys, xs = np.where(alpha > alpha_thresh)
+    if len(xs) == 0:
+        return rgba
+    box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    if box == (0, 0, rgba.width, rgba.height):
+        return rgba
+    return rgba.crop(box)
+
+
 def ensure_transparent(
     img: Image.Image, tol: int = 25, rembg_fn=_default_rembg
 ) -> Image.Image:
-    """Return an RGBA monke with its background removed, choosing the tier
-    automatically: alpha pass-through -> solid-color cutout -> ML fallback."""
+    """Return an RGBA monke with its background removed AND trimmed to its opaque
+    content, choosing the tier automatically: alpha pass-through -> solid-color
+    cutout -> ML fallback. Trimming ensures the monke actually covers the head."""
     tier = select_tier(img, tol)
     if tier == "alpha":
-        return img.convert("RGBA")
-    if tier == "solid":
-        return solid_cutout(img, tol)
-    return ml_cutout(img, rembg_fn)
+        cut = img.convert("RGBA")
+    elif tier == "solid":
+        cut = solid_cutout(img, tol)
+    else:
+        cut = ml_cutout(img, rembg_fn)
+    return trim_transparent(cut)
