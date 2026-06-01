@@ -32,6 +32,18 @@ class FakeDetector:
         return self._r
 
 
+class VecEmbedder:
+    """Embeds a face to a fixed unit vector keyed by the face's x position."""
+
+    def __init__(self, mapping):
+        # mapping: x -> 3-vector
+        self._m = mapping
+
+    def embed(self, image, region):
+        v = np.array(self._m.get(region.x, [0.0, 0.0, 1.0]), dtype=float)
+        return v / np.linalg.norm(v)
+
+
 def test_detect_faces_returns_thumb_per_face(tmp_path):
     photo = _save_photo(tmp_path)
     det = FakeDetector([_region(20, 20, 80), _region(180, 180, 80)])
@@ -72,3 +84,44 @@ def test_compose_applies_manual_offset(tmp_path):
     # monke center moved +80px in x -> green now present well to the right of base
     shifted_x = int(base.cx + 80)
     assert arr[int(base.cy), shifted_x, 1] > 100
+
+
+def test_enroll_person_averages_usable_refs(tmp_path):
+    photo = _save_photo(tmp_path)  # reuse as a stand-in reference face image
+    det = FakeDetector([_region(10, 10, 40)])
+    emb = VecEmbedder({10: [1.0, 0.0, 0.0]})
+    vec, usable = service.enroll_person([photo, photo], emb, det)
+    assert usable == 2
+    assert vec is not None
+    assert abs(np.linalg.norm(np.array(vec)) - 1.0) < 1e-6
+
+
+def test_enroll_person_no_usable_faces(tmp_path):
+    photo = _save_photo(tmp_path)
+    det = FakeDetector([])  # no face detected in references
+    emb = VecEmbedder({})
+    vec, usable = service.enroll_person([photo], emb, det)
+    assert vec is None and usable == 0
+
+
+def test_suggest_matches_and_unmatched(tmp_path):
+    photo = _save_photo(tmp_path)
+    # face at x=20 -> nico-ish vector; face at x=200 -> unrelated vector
+    det = FakeDetector([_region(20, 20, 80), _region(200, 20, 80)])
+    emb = VecEmbedder({20: [1.0, 0.0, 0.0], 200: [0.0, 0.0, 1.0]})
+    nico_vec = tuple((np.array([1.0, 0.0, 0.0])).tolist())
+    people = [{"person_id": "p1", "monke_id": "m0.png", "embedding": nico_vec}]
+    suggestions, unmatched = service.suggest(photo, people, emb, det, threshold=0.5)
+    assert suggestions == [
+        {"face_index": 0, "person_id": "p1", "monke_id": "m0.png", "similarity": 1.0}
+    ]
+    assert unmatched == [1]
+
+
+def test_suggest_no_people_all_unmatched(tmp_path):
+    photo = _save_photo(tmp_path)
+    det = FakeDetector([_region(20, 20, 80), _region(200, 20, 80)])
+    emb = VecEmbedder({})
+    suggestions, unmatched = service.suggest(photo, [], emb, det)
+    assert suggestions == []
+    assert unmatched == [0, 1]

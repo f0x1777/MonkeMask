@@ -21,11 +21,15 @@ class SessionStore:
         self._ttl = ttl_seconds
         self._clock = clock
         self._created: dict[str, float] = {}
+        # In-session people for auto-suggest: sid -> list of person dicts
+        # ({person_id, name, monke_id, embedding, n_refs}).
+        self.people: dict[str, list[dict]] = {}
 
     def create(self) -> str:
         sid = uuid.uuid4().hex
         self.path(sid).mkdir(parents=True, exist_ok=True)
         self._created[sid] = self._clock()
+        self.people[sid] = []
         return sid
 
     def path(self, sid: str) -> Path:
@@ -37,6 +41,7 @@ class SessionStore:
     def delete(self, sid: str) -> None:
         shutil.rmtree(self.path(sid), ignore_errors=True)
         self._created.pop(sid, None)
+        self.people.pop(sid, None)
 
     def sweep(self) -> list[str]:
         """Delete sessions older than the TTL. Returns the ids removed."""
