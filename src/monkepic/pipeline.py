@@ -107,9 +107,11 @@ def process_image(
 
     # Paint back-to-front so a nearer monke covers the residual overlap of a
     # farther one — every face stays fully covered even when faces are close.
+    # clamp=False: a face near/over an edge keeps its monke centred on it (cropped at
+    # the border) instead of sliding inward and leaving the face uncovered.
     canvas = image.convert("RGBA")
     for i in depth_order(face_boxes):
-        canvas = composite(canvas, monkes[i], placements[i])
+        canvas = composite(canvas, monkes[i], placements[i], clamp=False)
 
     save_image(canvas, out_path)
     return out_path

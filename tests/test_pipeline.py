@@ -43,6 +43,23 @@ def test_covers_all_faces(tmp_path):
         assert arr[cy, cx, 1] > 100  # green channel raised
 
 
+def test_edge_face_monke_stays_on_face_not_slid_inward(tmp_path):
+    # A face whose center sits at the right edge (it runs partly off-frame, like a
+    # selfie-taker in a corner). The monke must stay centred on the face and crop at
+    # the edge, NOT slide inward to fit fully inside (which leaves the face uncovered).
+    src = tmp_path / "in.png"
+    Image.new("RGB", (300, 300), (10, 10, 10)).save(src)
+    pool = _make_monke_pool(tmp_path, 1)
+    # face box centred at x=300 (the right edge), partly off-frame
+    reg = FaceRegion(280, 130, 40, 40, (288, 146), (312, 146))
+    out = process_image(src, pool, tmp_path / "out", FakeDetector([reg]), seed=1)
+    arr = np.array(Image.open(out).convert("RGBA"))
+    xs = np.where(arr[:, :, 1] > 100)[1]  # green monke pixels
+    # Centred-on-face cropping keeps the green mass near the edge (~280+); a slid-in
+    # monke would pull it well left (~260). Assert it stays on the face.
+    assert xs.mean() >= 275
+
+
 def test_default_output_next_to_input(tmp_path):
     photos = tmp_path / "photos"
     photos.mkdir()

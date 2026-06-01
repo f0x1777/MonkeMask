@@ -147,17 +147,11 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
                   for (r, _), m in zip(pairs, monkes)]
     faces = [(r.x, r.y, r.w, r.h) for r, _ in pairs]
     placements = resolve_overlaps(placements, faces)
-    # Per-monke: a monke the user has actually moved/resized is "manual" — honor its
-    # exact position and let it run off the image edge (cropped) instead of snapping
-    # it back inside. Untouched monkes keep the clamp so auto-placement near a corner
-    # still slides them fully into view.
-    manual = [False] * len(placements)
     if offsets:
         adjusted = []
-        for idx, (p, off) in enumerate(zip(placements, offsets)):
+        for p, off in zip(placements, offsets):
             dx, dy = off[0], off[1]
             scale = off[2] if len(off) > 2 else 1.0
-            manual[idx] = dx != 0 or dy != 0 or scale != 1.0
             adjusted.append(Placement(
                 p.cx + dx, p.cy + dy,
                 max(1, round(p.w * scale)), max(1, round(p.h * scale)),
@@ -165,8 +159,11 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
             ))
         placements = adjusted
     # Paint back-to-front so a nearer monke covers a farther one's residual overlap.
+    # clamp=False always: a face near/over an image edge keeps its monke centred on it
+    # (cropped at the border) instead of sliding inward and leaving the face exposed —
+    # both for auto-placement and for manual drags/resizes.
     for i in depth_order(faces):
-        canvas = composite(canvas, monkes[i], placements[i], clamp=not manual[i])
+        canvas = composite(canvas, monkes[i], placements[i], clamp=False)
     buf = io.BytesIO()
     canvas.save(buf, format="PNG")
     return buf.getvalue()
