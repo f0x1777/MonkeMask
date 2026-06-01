@@ -7,9 +7,9 @@ from . import geometry
 from .background import ensure_transparent
 from .compositor import composite
 from .crops import export_crops
+from .layout import resolve_overlaps
 from .loader import list_images, load_image, save_image
 from .selector import MonkeSelector
-from .types import Placement
 
 
 def process_image(
@@ -56,13 +56,18 @@ def process_image(
             raise ValueError(f"no monkes found in {monke_pool}")
         monke_paths = MonkeSelector(pool, seed=seed).assign(len(regions))
 
+    # Compute every placement first, nudge overlapping monkes apart, then composite.
+    monkes = [ensure_transparent(load_image(p)) for p in monke_paths]
+    placements = [
+        geometry.placement_for(r, m.width, m.height, margin=margin, rotate=rotate)
+        for r, m in zip(regions, monkes)
+    ]
+    face_boxes = [(r.x, r.y, r.w, r.h) for r in regions]
+    placements = resolve_overlaps(placements, face_boxes)
+
     canvas = image.convert("RGBA")
-    for region, monke_path in zip(regions, monke_paths):
-        monke = ensure_transparent(load_image(monke_path))
-        cx, cy, bw, bh = geometry.head_box(region.x, region.y, region.w, region.h, margin)
-        tw, th = geometry.monke_target_size(bw, bh, monke.width, monke.height)
-        roll = geometry.eye_roll(region.left_eye, region.right_eye) if rotate else 0.0
-        canvas = composite(canvas, monke, Placement(cx, cy, tw, th, roll))
+    for monke, placement in zip(monkes, placements):
+        canvas = composite(canvas, monke, placement)
 
     save_image(canvas, out_path)
     return out_path

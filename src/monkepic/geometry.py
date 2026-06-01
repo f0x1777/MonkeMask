@@ -2,6 +2,19 @@ from __future__ import annotations
 
 import math
 
+from .types import Placement
+
+
+def placement_for(region, monke_w: int, monke_h: int, *, margin: float = 1.0,
+                  rotate: bool = True) -> Placement:
+    """Build the Placement for a face: head-box center, monke size that covers it,
+    and the head-tilt roll. The single source of truth for face→monke geometry,
+    used by both the CLI pipeline and the web service."""
+    cx, cy, bw, bh = head_box(region.x, region.y, region.w, region.h, margin)
+    tw, th = monke_target_size(bw, bh, monke_w, monke_h)
+    roll = eye_roll(region.left_eye, region.right_eye) if rotate else 0.0
+    return Placement(cx, cy, tw, th, roll)
+
 
 def roll_degrees(left_eye: tuple[float, float], right_eye: tuple[float, float]) -> float:
     """Angle (degrees) of the eye line vs horizontal, where ``left_eye`` is the
