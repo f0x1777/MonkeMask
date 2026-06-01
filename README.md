@@ -85,6 +85,33 @@ results elsewhere.
 > and re-run; if it's still missed, cover that one by hand. This matters — a missed
 > face defeats the privacy purpose.
 
+### Identity matching (Phase 3)
+
+Give each person *their own* monke instead of a random one:
+
+```bash
+uv run monkepic photo.jpg --match
+```
+
+How it works:
+- Reads `OurMonke/NN - Person/` — the file with `SMB` in its name is that
+  person's monke; any other images are reference photos of their face.
+- Recognizes each detected face (InsightFace/ArcFace) and applies that person's
+  monke. Unrecognized faces get the generic `MonkeDAO_DAOJones.png`.
+- Clearly-background faces (small/distant) are left untouched.
+
+Build the dataset over time: run with `--export-crops faces/_inbox`, then drag
+each crop into the right `OurMonke/NN - Person/` folder. More reference photos per
+person = better recognition.
+
+> ⚠️ With only one reference photo per person, recognition will make mistakes.
+> The threshold is conservative (prefers the generic monke over a wrong guess) and
+> accuracy improves as you add more reference photos. Always eyeball the result.
+
+Matching flags: `--ourmonke DIR`, `--generic-monke FILE`,
+`--recognition-threshold` (default 0.5), `--min-face-ratio` (0.35),
+`--min-face-px` (40), `--rebuild-gallery`.
+
 ---
 
 ## How it works
@@ -169,7 +196,7 @@ unit-tested in isolation; the ML detector is mocked in pipeline tests. See
 
 - [x] **Phase 1 — Auto-anonymizer (CLI).** Cover every face with a monke.
 - [ ] **Phase 2 — Local web UI.** Drag a photo in the browser, download the result.
-- [ ] **Phase 3 — Identity matching.** Recognize who each face is and give them
+- [x] **Phase 3 — Identity matching.** Recognize who each face is and give them
   *their* monke; unknown faces get a generic one. The `--export-crops` flag already
   collects the face crops needed to build this dataset.
 
