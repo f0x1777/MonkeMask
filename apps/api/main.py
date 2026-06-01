@@ -65,32 +65,48 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/api/detect")
-async def detect(photo: UploadFile):
-    data = await photo.read()
-    _check(photo, data, MAX_PHOTO_BYTES)
+def _detect_and_store(sid: str):
+    """Run detection on a session's photo, persist face regions, return the face
+    payload. Shared by /api/detect and /api/rotate."""
     store: SessionStore = app.state.sessions
-    sid = store.create()
     photo_path = store.path(sid) / "photo"
-    photo_path.write_bytes(data)
-
     results = service.detect_faces(photo_path, _detector())[:MAX_FACES]
-    # Persist the face regions so /compose can rebuild placements without the client
-    # round-tripping geometry.
     faces_meta = [
         {"index": i, "x": r.x, "y": r.y, "w": r.w, "h": r.h,
          "left_eye": list(r.left_eye), "right_eye": list(r.right_eye)}
         for i, (r, _) in enumerate(results)
     ]
     (store.path(sid) / "faces.json").write_text(json.dumps(faces_meta))
+    return [
+        {"index": i, "x": r.x, "y": r.y, "w": r.w, "h": r.h, "thumb": thumb}
+        for i, (r, thumb) in enumerate(results)
+    ]
 
-    return {
-        "session": sid,
-        "faces": [
-            {"index": i, "x": r.x, "y": r.y, "w": r.w, "h": r.h, "thumb": thumb}
-            for i, (r, thumb) in enumerate(results)
-        ],
-    }
+
+@app.post("/api/detect")
+async def detect(photo: UploadFile):
+    data = await photo.read()
+    _check(photo, data, MAX_PHOTO_BYTES)
+    store: SessionStore = app.state.sessions
+    sid = store.create()
+    (store.path(sid) / "photo").write_bytes(data)
+    return {"session": sid, "faces": _detect_and_store(sid)}
+
+
+@app.post("/api/rotate")
+async def rotate(payload: dict):
+    """Rotate the session photo 90/180/270° clockwise and re-detect faces.
+    Resets any prior monke assignments on the client (faces are renumbered)."""
+    store: SessionStore = app.state.sessions
+    sid = payload.get("session")
+    if not sid or not store.exists(sid):
+        raise HTTPException(404, "unknown or expired session")
+    degrees = int(payload.get("degrees", 90)) % 360
+    if degrees not in (0, 90, 180, 270):
+        raise HTTPException(400, "degrees must be 0, 90, 180 or 270")
+    if degrees:
+        service.rotate_photo(store.path(sid) / "photo", degrees)
+    return {"session": sid, "faces": _detect_and_store(sid)}
 
 
 @app.post("/api/monkes")

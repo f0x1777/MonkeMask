@@ -48,6 +48,15 @@ def detect_faces(photo_path: str | Path, detector, *, min_confidence=None):
     return out
 
 
+def rotate_photo(photo_path: str | Path, degrees: int) -> None:
+    """Rotate the stored photo in place by ``degrees`` (90/180/270, clockwise).
+    Saved as PNG bytes so EXIF can't reintroduce a rotation on reload."""
+    image = load_image(photo_path).convert("RGB")
+    # PIL rotates counter-clockwise for positive angles; negate for clockwise.
+    rotated = image.rotate(-degrees, expand=True)
+    rotated.save(photo_path, format="PNG")
+
+
 def monke_thumb(monke_path: str | Path) -> str:
     """Background-removed thumbnail of a monke (data URL)."""
     return _png_b64(_thumb(ensure_transparent(load_image(monke_path))))

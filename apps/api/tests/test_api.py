@@ -182,3 +182,24 @@ def test_people_cleared_on_session_delete(client):
     assert client.app.state.sessions.people.get(sid)
     client.delete(f"/api/session/{sid}")
     assert sid not in client.app.state.sessions.people
+
+
+def test_rotate_redetects_and_returns_faces(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    n0 = len(r.json()["faces"])
+    rr = client.post("/api/rotate", json={"session": sid, "degrees": 90})
+    assert rr.status_code == 200
+    assert rr.json()["session"] == sid
+    # FakeDetector returns a fixed set, so the count is stable after rotation.
+    assert len(rr.json()["faces"]) == n0
+
+
+def test_rotate_bad_degrees_is_400(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    assert client.post("/api/rotate", json={"session": sid, "degrees": 45}).status_code == 400
+
+
+def test_rotate_unknown_session_is_404(client):
+    assert client.post("/api/rotate", json={"session": "nope", "degrees": 90}).status_code == 404

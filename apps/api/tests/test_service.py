@@ -125,3 +125,11 @@ def test_suggest_no_people_all_unmatched(tmp_path):
     suggestions, unmatched = service.suggest(photo, [], emb, det)
     assert suggestions == []
     assert unmatched == [0, 1]
+
+
+def test_rotate_photo_swaps_dimensions(tmp_path):
+    p = tmp_path / "photo"
+    Image.new("RGB", (200, 100), (10, 20, 30)).save(p, format="PNG")
+    service.rotate_photo(p, 90)
+    from PIL import Image as PILImage
+    assert PILImage.open(p).size == (100, 200)  # 90° swaps W/H

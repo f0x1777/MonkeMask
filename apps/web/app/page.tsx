@@ -64,6 +64,34 @@ export default function Home() {
     }
   }
 
+  async function rotatePhoto(degrees: number) {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/rotate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, degrees }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "rotate failed");
+      const data = await r.json();
+      setFaces(data.faces);
+      // Rotation renumbers faces; clear assignments/results to stay consistent.
+      setAssign({});
+      setOffsets({});
+      setResultUrl(null);
+      setSelectedFace(null);
+      setDragTarget(null);
+      setUnmatched([]);
+      setSuggestMsg(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onMonkes(e: React.ChangeEvent<HTMLInputElement>) {
     if (!session || !e.target.files?.length) return;
     setBusy(true);
@@ -386,6 +414,17 @@ export default function Home() {
             <span style={S.spinnerRow}>
               <span style={S.spinner} /> detecting faces…
             </span>
+          )}
+          {session && (
+            <div style={S.rotateRow}>
+              <span style={{ color: ui.textDim, fontSize: 14 }}>Photo sideways?</span>
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(270)} disabled={busy} title="rotate left">
+                ↺ Rotate left
+              </button>
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy} title="rotate right">
+                ↻ Rotate right
+              </button>
+            </div>
           )}
           <p style={S.privacy}>
             🔒 Your photo is processed on the server and deleted right after — never
@@ -838,6 +877,22 @@ const S: Record<string, any> = {
     background: "transparent",
     color: ui.accent,
     fontWeight: 700,
+    cursor: "pointer",
+  },
+  rotateRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+  rotateBtn: {
+    background: "transparent",
+    color: ui.ivory,
+    border: `1px solid ${ui.panelBorder}`,
+    borderRadius: 9,
+    padding: "8px 14px",
+    fontWeight: 500,
     cursor: "pointer",
   },
   result: { maxWidth: "100%", borderRadius: 12, display: "block" },
