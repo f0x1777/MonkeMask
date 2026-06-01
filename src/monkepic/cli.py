@@ -35,15 +35,56 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-confidence", type=float, default=0.5, help="detector threshold"
     )
+    p.add_argument("--match", action="store_true", help="enable identity matching (Phase 3)")
+    p.add_argument("--ourmonke", default="OurMonke", help="person/monke library dir")
+    p.add_argument("--generic-monke", default="MonkeDAO_DAOJones.png",
+                   help="monke for unrecognized faces")
+    p.add_argument("--recognition-threshold", type=float, default=0.5,
+                   help="min cosine similarity to accept a match")
+    p.add_argument("--min-face-ratio", type=float, default=0.35,
+                   help="background cutoff vs median face size")
+    p.add_argument("--min-face-px", type=int, default=40,
+                   help="absolute background cutoff in px")
+    p.add_argument("--rebuild-gallery", action="store_true",
+                   help="ignore the gallery cache and re-enroll")
     return p
 
 
-def main(argv=None, detector=None) -> int:
+def main(argv=None, detector=None, embedder=None) -> int:
     args = build_parser().parse_args(argv)
     if detector is None:
         from .detector import FaceDetector
 
         detector = FaceDetector(min_confidence=args.min_confidence)
+
+    if args.match:
+        from .embedder import FaceEmbedder
+        from .gallery import load_or_build_gallery
+        from .loader import list_images
+        from .matching import process_image_matched
+
+        if embedder is None:
+            embedder = FaceEmbedder()
+        gallery = load_or_build_gallery(
+            args.ourmonke, embedder, detector, rebuild=args.rebuild_gallery
+        )
+        if not gallery:
+            print("warning: no enrolled persons; all faces -> generic", file=sys.stderr)
+
+        inputs = [p for p in list_images(args.input) if not p.stem.endswith("-monked")]
+        if not inputs:
+            print(f"No images found at {args.input}", file=sys.stderr)
+            return 1
+        for p in inputs:
+            out = process_image_matched(
+                p, gallery, args.generic_monke, args.out, detector, embedder,
+                threshold=args.recognition_threshold,
+                min_ratio=args.min_face_ratio, min_px=args.min_face_px,
+                margin=args.margin, rotate=not args.no_rotate,
+                crops_dir=args.export_crops,
+            )
+            print(out)
+        return 0
 
     outputs = process_path(
         args.input,
