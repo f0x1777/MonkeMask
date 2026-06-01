@@ -48,7 +48,7 @@ Reuses the existing layout — no reorganization needed.
 OurMonke/NN - Person Name/
     <something with "SMB" in the name>.<ext>   # the person's MONKE (avatar to paste)
     <other images>.<ext>                        # reference photos of the person's face
-assets/MonkeDAO_DAOJones.png                     # generic monke (ships with the repo)
+MonkeDAO_DAOJones.png                     # generic monke (ships with the repo)
 ```
 
 Rules:
@@ -58,7 +58,7 @@ Rules:
   back to generic). Today 10 of ~30 are enrolled.
 - `Potential - *` and `_generic` folders are ignored for enrollment (no `NN - `
   index, or reserved name).
-- The generic monke default is `assets/MonkeDAO_DAOJones.png`, overridable with
+- The generic monke default is `MonkeDAO_DAOJones.png`, overridable with
   `--generic-monke`.
 
 ## 5. Architecture
@@ -141,7 +141,7 @@ face's `monke_path`. This keeps composition logic in one place (DRY).
 monkepic INPUT --match [options]
   --match                       enable identity matching (Phase 3)
   --ourmonke DIR                person/monke library (default: "OurMonke")
-  --generic-monke FILE          default: assets/MonkeDAO_DAOJones.png
+  --generic-monke FILE          default: MonkeDAO_DAOJones.png
   --recognition-threshold F     default 0.5 (higher = stricter)
   --min-face-ratio F            default 0.35 (background cutoff vs median)
   --min-face-px INT             default 40 (absolute background cutoff)

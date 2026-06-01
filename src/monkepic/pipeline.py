@@ -24,9 +24,12 @@ def process_image(
     crops_dir=None,
     forced_monke=None,
 ) -> Path:
-    """Anonymize one photo: detect faces, cover each with a monke. Returns output path."""
+    """Anonymize one photo: detect faces, cover each with a monke. Returns output path.
+
+    ``out_dir=None`` writes the result next to the input photo.
+    """
     src = Path(src)
-    out_dir = Path(out_dir)
+    out_dir = Path(out_dir) if out_dir is not None else src.parent
     out_path = out_dir / f"{src.stem}-monked.png"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,8 +37,10 @@ def process_image(
     regions = detector.detect(image)
 
     if not regions:
-        shutil.copyfile(src, out_dir / src.name)
-        return out_dir / src.name
+        # Keep the original format/pixels but never clobber the source file.
+        dest = out_dir / f"{src.stem}-monked{src.suffix}"
+        shutil.copyfile(src, dest)
+        return dest
 
     if crops_dir is not None:
         export_crops(image, regions, crops_dir, src.stem)
@@ -61,8 +66,10 @@ def process_image(
 
 
 def process_path(src, monke_pool, out_dir, detector, **kwargs) -> list[Path]:
-    """Process a single file or every supported image in a directory."""
-    return [
-        process_image(p, monke_pool, out_dir, detector, **kwargs)
-        for p in list_images(src)
-    ]
+    """Process a single file or every supported image in a directory.
+
+    Skips already-processed ``*-monked.*`` files so re-running on a folder that
+    holds its own outputs (default same-folder output) is safe.
+    """
+    inputs = [p for p in list_images(src) if not p.stem.endswith("-monked")]
+    return [process_image(p, monke_pool, out_dir, detector, **kwargs) for p in inputs]

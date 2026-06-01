@@ -43,6 +43,18 @@ def test_covers_all_faces(tmp_path):
         assert arr[cy, cx, 1] > 100  # green channel raised
 
 
+def test_default_output_next_to_input(tmp_path):
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    src = photos / "in.png"
+    Image.new("RGB", (300, 300), (10, 10, 10)).save(src)
+    pool = _make_monke_pool(tmp_path, 2)
+    out = process_image(src, pool, None, FakeDetector([_region(20, 20, 60)]), seed=1)
+    assert out.parent == photos  # written next to the input, not in output/
+    assert out.name == "in-monked.png"
+    assert out.exists()
+
+
 def test_no_faces_copies_original(tmp_path):
     src = tmp_path / "in.png"
     Image.new("RGB", (40, 40), (123, 50, 7)).save(src)

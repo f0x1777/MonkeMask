@@ -13,7 +13,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="photo file or directory")
     p.add_argument("--monkes", default="Argentina Monkes", help="monke pool directory")
     p.add_argument("--monke", default=None, help="force one specific monke for all faces")
-    p.add_argument("--out", default="output", help="output directory")
+    p.add_argument(
+        "--out",
+        default=None,
+        help="output directory (default: same folder as the input photo)",
+    )
     p.add_argument(
         "--margin",
         type=float,

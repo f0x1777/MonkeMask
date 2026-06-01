@@ -46,19 +46,24 @@ background remover ~176 MB) and are then cached locally.
 
 ```bash
 # Cover every face with a random monke from a folder of monke images
-uv run monkepic path/to/photo.jpg --monkes path/to/monkes --out output
+uv run monkepic path/to/photo.jpg --monkes path/to/monkes
 
 # Force one specific monke for all faces
 uv run monkepic photo.jpg --monke path/to/one-monke.png
 
 # Process a whole folder of photos at once
-uv run monkepic path/to/photos/ --monkes path/to/monkes --out output
+uv run monkepic path/to/photos/ --monkes path/to/monkes
 
 # Also export a crop of each detected face (used to build the matching dataset)
 uv run monkepic photo.jpg --monkes path/to/monkes --export-crops faces/_inbox
+
+# Write results somewhere else than next to the input
+uv run monkepic photo.jpg --monkes path/to/monkes --out some/output/dir
 ```
 
-The result is written to `output/<name>-monked.png`.
+By default the result is written **next to the input photo** as
+`<name>-monked.png` (e.g. `path/to/photo-monked.png`). Use `--out DIR` to send
+results elsewhere.
 
 ### Options
 
@@ -67,7 +72,7 @@ The result is written to `output/<name>-monked.png`.
 | `input` | — | Photo file **or** a directory of photos (processed recursively). |
 | `--monkes DIR` | `Argentina Monkes` | Folder of monke images to pick from (png/jpg/webp/avif). |
 | `--monke FILE` | — | Use one specific monke for every face (overrides `--monkes`). |
-| `--out DIR` | `output` | Where results are written. |
+| `--out DIR` | _same folder as input_ | Where results are written. |
 | `--margin FLOAT` | `1.0` | How much bigger than the detected face the monke is (`1.0` ≈ 2× the face box, so the whole head is covered). |
 | `--no-rotate` | off | Disable 2D rotation (monkes stay upright). |
 | `--export-crops DIR` | — | Also save a crop of each detected face to this folder. |

@@ -24,7 +24,6 @@ htmlcov/
 models/
 
 # Project data and assets (large binaries — external inputs, not source)
-/Argentina Monkes/
 /OurMonke/
 /Photos/
 /faces/
@@ -35,3 +34,10 @@ models/
 .env
 .env.*
 !.env.example
+
+# Generated anonymized outputs (written next to input by default)
+*-monked.png
+*-monked.jpg
+*-monked.jpeg
+*-monked.webp
+*-monked.avif
