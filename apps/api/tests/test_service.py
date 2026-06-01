@@ -133,3 +133,19 @@ def test_rotate_photo_swaps_dimensions(tmp_path):
     service.rotate_photo(p, 90)
     from PIL import Image as PILImage
     assert PILImage.open(p).size == (100, 200)  # 90° swaps W/H
+
+
+def test_compose_scale_enlarges_monke(tmp_path):
+    photo = _save_photo(tmp_path)
+    green = _save_monke(tmp_path, "g.png", [0, 255, 0])
+    face = _region(120, 120, 40)
+    small = service.compose(photo, [(face, green)], offsets=[(0.0, 0.0, 1.0)])
+    big = service.compose(photo, [(face, green)], offsets=[(0.0, 0.0, 2.0)])
+    import numpy as _np
+    from PIL import Image as _Img
+    import io as _io
+    a_small = _np.array(_Img.open(_io.BytesIO(small)).convert("RGB"))
+    a_big = _np.array(_Img.open(_io.BytesIO(big)).convert("RGB"))
+    green_small = ((a_small[:, :, 1] > 150) & (a_small[:, :, 0] < 100)).sum()
+    green_big = ((a_big[:, :, 1] > 150) & (a_big[:, :, 0] < 100)).sum()
+    assert green_big > green_small  # 2x scale -> more green pixels

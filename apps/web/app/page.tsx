@@ -15,8 +15,10 @@ export default function Home() {
   const [faces, setFaces] = useState<Face[]>([]);
   const [monkes, setMonkes] = useState<Monke[]>([]);
   const [assign, setAssign] = useState<Record<number, string>>({});
-  const [offsets, setOffsets] = useState<Record<number, { dx: number; dy: number }>>({});
+  const [offsets, setOffsets] =
+    useState<Record<number, { dx: number; dy: number; scale: number }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
+  const [selectedMonke, setSelectedMonke] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export default function Home() {
       setOffsets({});
       setResultUrl(null);
       setSelectedFace(null);
+      setSelectedMonke(null);
       setDragTarget(null);
       setPeople([]);
       setUnmatched([]);
@@ -91,6 +94,7 @@ export default function Home() {
       setOffsets({});
       setResultUrl(null);
       setSelectedFace(null);
+      setSelectedMonke(null);
       setDragTarget(null);
       setUnmatched([]);
       setSuggestMsg(null);
@@ -120,12 +124,32 @@ export default function Home() {
     }
   }
 
-  function pickMonke(monkeId: string, el?: HTMLElement) {
-    if (selectedFace === null) return;
-    setAssign((a) => ({ ...a, [selectedFace]: monkeId }));
+  function assignPair(faceIndex: number, monkeId: string) {
+    setAssign((a) => ({ ...a, [faceIndex]: monkeId }));
     setSelectedFace(null);
-    // Clear the focus ring so the just-clicked monke doesn't look "selected".
+    setSelectedMonke(null);
+  }
+
+  // Click a face: if a monke is already selected, pair them; otherwise select/
+  // toggle the face (works in either order — face-first or monke-first).
+  function clickFace(faceIndex: number, el?: HTMLElement) {
     el?.blur();
+    if (selectedMonke !== null) {
+      assignPair(faceIndex, selectedMonke);
+      return;
+    }
+    setSelectedFace(selectedFace === faceIndex ? null : faceIndex);
+  }
+
+  // Click a monke: if a face is already selected, pair them; otherwise select/
+  // toggle the monke so the next face click assigns it.
+  function clickMonke(monkeId: string, el?: HTMLElement) {
+    el?.blur();
+    if (selectedFace !== null) {
+      assignPair(selectedFace, monkeId);
+      return;
+    }
+    setSelectedMonke(selectedMonke === monkeId ? null : monkeId);
   }
 
   async function addPerson(e: React.ChangeEvent<HTMLInputElement>) {
@@ -211,17 +235,20 @@ export default function Home() {
     }
   }
 
-  async function composeWith(sid: string, off: typeof offsets) {
-    const assignments = Object.entries(assign).map(([fi, mid]) => {
-      const o = off[Number(fi)] || { dx: 0, dy: 0 };
-      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy };
+  function buildAssignments(assignMap: Record<number, string>, off: typeof offsets) {
+    return Object.entries(assignMap).map(([fi, mid]) => {
+      const o = off[Number(fi)] || { dx: 0, dy: 0, scale: 1 };
+      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy, scale: o.scale };
     });
+  }
+
+  async function composeWith(sid: string, off: typeof offsets) {
     const r = await fetch(`${API}/api/compose`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session: sid, assignments }),
+      body: JSON.stringify({ session: sid, assignments: buildAssignments(assign, off) }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
+    if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "compose failed"));
     setResultUrl(URL.createObjectURL(await r.blob()));
   }
 
@@ -244,16 +271,12 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const assignments = Object.entries(assignMap).map(([fi, mid]) => {
-        const o = offsets[Number(fi)] || { dx: 0, dy: 0 };
-        return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy };
-      });
       const r = await fetch(`${API}/api/compose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, assignments }),
+        body: JSON.stringify({ session, assignments: buildAssignments(assignMap, offsets) }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
+      if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "compose failed"));
       setResultUrl(URL.createObjectURL(await r.blob()));
     } catch (err: any) {
       setError(friendlyError(err.message));
@@ -293,8 +316,25 @@ export default function Home() {
 
   async function nudge(faceIndex: number, dx: number, dy: number) {
     if (!session) return;
-    const cur = offsets[faceIndex] || { dx: 0, dy: 0 };
-    const next = { ...offsets, [faceIndex]: { dx: cur.dx + dx, dy: cur.dy + dy } };
+    const cur = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+    const next = { ...offsets, [faceIndex]: { ...cur, dx: cur.dx + dx, dy: cur.dy + dy } };
+    setOffsets(next);
+    setBusy(true);
+    setError(null);
+    try {
+      await composeWith(session, next);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resize(faceIndex: number, factor: number) {
+    if (!session) return;
+    const cur = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+    const scale = Math.min(4, Math.max(0.25, cur.scale * factor));
+    const next = { ...offsets, [faceIndex]: { ...cur, scale } };
     setOffsets(next);
     setBusy(true);
     setError(null);
@@ -328,12 +368,12 @@ export default function Home() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       const img = resultImgRef.current;
-      const scale = img && img.clientWidth ? img.naturalWidth / img.clientWidth : 1;
-      const ddx = dx * scale;
-      const ddy = dy * scale;
+      const px = img && img.clientWidth ? img.naturalWidth / img.clientWidth : 1;
+      const ddx = dx * px;
+      const ddy = dy * px;
       if (Math.abs(ddx) < 1 && Math.abs(ddy) < 1) return; // ignore taps
-      const cur = offsets[face] || { dx: 0, dy: 0 };
-      const next = { ...offsets, [face]: { dx: cur.dx + ddx, dy: cur.dy + ddy } };
+      const cur = offsets[face] || { dx: 0, dy: 0, scale: 1 };
+      const next = { ...offsets, [face]: { ...cur, dx: cur.dx + ddx, dy: cur.dy + ddy } };
       setOffsets(next);
       setBusy(true);
       setError(null);
@@ -363,6 +403,7 @@ export default function Home() {
     setAssign({});
     setOffsets({});
     setSelectedFace(null);
+    setSelectedMonke(null);
     setResultUrl(null);
     setError(null);
     setDragTarget(null);
@@ -452,23 +493,21 @@ export default function Home() {
             </span>
           </h2>
 
-          {selectedFace !== null && (
+          {(selectedFace !== null || selectedMonke !== null) && (
             <p style={{ color: ui.accent, fontWeight: 700 }}>
-              Now click a monke to assign it to face #{selectedFace}
+              {selectedFace !== null
+                ? `Now click a monke to assign it to face #${selectedFace} →`
+                : "Now click a face to assign this monke to it →"}
             </p>
           )}
 
-          <p style={S.label}>Faces — click one to select it:</p>
+          <p style={S.label}>Faces — click one to select it (or pick a monke first):</p>
           <div style={S.grid}>
             {faces.map((f) => (
               <button
                 key={f.index}
                 style={S.thumbBtn(selectedFace === f.index, !!assign[f.index])}
-                onClick={(e) => {
-                  // Toggle: clicking the selected face again deselects it.
-                  setSelectedFace(selectedFace === f.index ? null : f.index);
-                  e.currentTarget.blur();
-                }}
+                onClick={(e) => clickFace(f.index, e.currentTarget)}
                 title={`face #${f.index}`}
               >
                 <img src={f.thumb} alt={`face ${f.index}`} style={S.thumbImg} />
@@ -479,7 +518,7 @@ export default function Home() {
             ))}
           </div>
 
-          <p style={S.label}>Monkes — upload, then click one to assign it:</p>
+          <p style={S.label}>Monkes — click one to select it (or pick a face first):</p>
           <label style={S.uploadSmall}>
             + Add monke images
             <input type="file" accept="image/*" multiple onChange={onMonkes} disabled={busy} hidden />
@@ -488,18 +527,18 @@ export default function Home() {
             {monkes.map((m) => {
               const usedCount = Object.values(assign).filter((id) => id === m.id).length;
               const used = usedCount > 0;
+              const sel = selectedMonke === m.id;
               return (
                 <button
                   key={m.id}
-                  style={S.monkeBtn(used)}
-                  onClick={(e) => pickMonke(m.id, e.currentTarget)}
-                  disabled={selectedFace === null}
+                  style={S.monkeBtn(used, sel)}
+                  onClick={(e) => clickMonke(m.id, e.currentTarget)}
                   title={
-                    selectedFace === null
-                      ? "select a face first"
-                      : used
-                        ? `already used — assign to face #${selectedFace} too`
-                        : `assign to face #${selectedFace}`
+                    selectedFace !== null
+                      ? `assign to face #${selectedFace}`
+                      : sel
+                        ? "selected — now click a face"
+                        : "click to select, then click a face"
                   }
                 >
                   <img src={m.thumb} alt={m.id} style={{ ...S.thumbImg, opacity: used ? 0.45 : 1 }} />
@@ -615,7 +654,8 @@ export default function Home() {
             <summary style={S.summary}>Adjust a monke (if two overlap or one sits off)</summary>
             <p style={S.label}>
               Overlapping monkes are separated automatically. To fine-tune, pick a
-              face below then <strong>drag it on the image</strong> — or use the arrows.
+              face then <strong>drag it on the image</strong> to move it, or use the
+              arrows (◀▲▼▶) and the <strong>－／＋</strong> buttons to resize.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
@@ -635,6 +675,9 @@ export default function Home() {
                       <button style={S.arrow} onClick={() => nudge(f.index, 0, NUDGE)} disabled={busy}>▼</button>
                     </div>
                     <button style={S.arrow} onClick={() => nudge(f.index, NUDGE, 0)} disabled={busy}>▶</button>
+                    <span style={{ width: 1, height: 26, background: ui.panelBorder, margin: "0 2px" }} />
+                    <button style={S.arrow} onClick={() => resize(f.index, 1 / 1.15)} disabled={busy} title="smaller">－</button>
+                    <button style={S.arrow} onClick={() => resize(f.index, 1.15)} disabled={busy} title="bigger">＋</button>
                   </div>
                 ))}
             </div>
@@ -844,11 +887,11 @@ const S: Record<string, any> = {
     padding: "1px 6px",
     borderRadius: 6,
   },
-  monkeBtn: (used: boolean) => ({
+  monkeBtn: (used: boolean, selected = false) => ({
     position: "relative",
     padding: 0,
     background: "transparent",
-    border: `3px solid ${used ? ui.good : "transparent"}`,
+    border: `3px solid ${selected ? ui.selected : used ? ui.good : "transparent"}`,
     borderRadius: 12,
     cursor: "pointer",
   }),

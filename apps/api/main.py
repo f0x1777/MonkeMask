@@ -249,7 +249,9 @@ async def compose(payload: dict):
         if region is None or not monke.exists():
             raise HTTPException(400, f"bad assignment: {a}")
         pairs.append((region, monke))
-        offsets.append((float(a.get("dx", 0)), float(a.get("dy", 0))))
+        scale = float(a.get("scale", 1.0))
+        scale = min(4.0, max(0.25, scale))  # clamp to a sane range
+        offsets.append((float(a.get("dx", 0)), float(a.get("dy", 0)), scale))
 
     png = service.compose(store.path(sid) / "photo", pairs, offsets=offsets)
     # Keep the session so the user can nudge a monke and re-compose; it is deleted

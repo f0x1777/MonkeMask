@@ -23,7 +23,7 @@ test("full flow: upload photo, pair a monke, generate, download", async ({ page 
 
   // Step 2: upload a monke (the second file input is the monke uploader).
   await page.locator('input[type="file"]').nth(1).setInputFiles(MONKE);
-  const monkeThumb = page.locator('button[title*="assign to face"], button[title="select a face first"]');
+  const monkeThumb = page.locator('button[title*="click to select"], button[title*="assign to face"]');
   await expect(monkeThumb.first()).toBeVisible({ timeout: 30_000 });
 
   // Select face #0, then click the monke to assign it.
@@ -71,4 +71,20 @@ test("full flow: upload photo, pair a monke, generate, download", async ({ page 
     expect(await result.getAttribute("src")).not.toBe(beforeDrag);
   }).toPass({ timeout: 30_000 });
   await page.screenshot({ path: testInfo.outputPath("06-dragged.png"), fullPage: true });
+});
+
+test("pair monke-first then face (reverse order)", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[type="file"]').first().setInputFiles(PHOTO);
+  const faces = page.locator('button[title^="face #"]');
+  await expect(faces.first()).toBeVisible({ timeout: 60_000 });
+  const faceCount = await faces.count();
+
+  await page.locator('input[type="file"]').nth(1).setInputFiles(MONKE);
+  // Click the MONKE first (no face selected yet), then click a face.
+  await page.locator('button[title*="click to select"]').first().click();
+  await expect(page.getByText(/click a face to assign this monke/)).toBeVisible();
+  await page.locator('button[title="face #0"]').click();
+  // face #0 should now be assigned -> counter shows 1/N
+  await expect(page.getByText("1/" + faceCount + " done")).toBeVisible();
 });

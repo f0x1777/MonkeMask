@@ -137,10 +137,10 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
     """``pairs`` is a list of (FaceRegion, monke_path). Returns PNG bytes.
 
     Overlapping monkes (close faces) are nudged apart automatically. ``offsets`` is
-    an optional list of (dx, dy) in original-image pixels, one per pair, applied
-    AFTER the auto layout — this is how the web lets a user drag a monke by hand to
-    override the automatic placement. Faces not present in ``pairs`` are left
-    uncovered (the UI warns the user)."""
+    an optional list of per-pair manual adjustments applied AFTER the auto layout —
+    each is ``(dx, dy)`` or ``(dx, dy, scale)`` in original-image pixels (scale is a
+    multiplier on the monke size, default 1.0). This is how the web lets a user
+    drag/resize a monke by hand. Faces not present in ``pairs`` are left uncovered."""
     canvas = load_image(photo_path).convert("RGBA")
     monkes = [ensure_transparent(load_image(mp)) for _, mp in pairs]
     placements = [placement_for(r, m, margin=margin, rotate=rotate)
@@ -148,10 +148,16 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
     faces = [(r.x, r.y, r.w, r.h) for r, _ in pairs]
     placements = resolve_overlaps(placements, faces)
     if offsets:
-        placements = [
-            Placement(p.cx + dx, p.cy + dy, p.w, p.h, p.roll_deg)
-            for p, (dx, dy) in zip(placements, offsets)
-        ]
+        adjusted = []
+        for p, off in zip(placements, offsets):
+            dx, dy = off[0], off[1]
+            scale = off[2] if len(off) > 2 else 1.0
+            adjusted.append(Placement(
+                p.cx + dx, p.cy + dy,
+                max(1, round(p.w * scale)), max(1, round(p.h * scale)),
+                p.roll_deg,
+            ))
+        placements = adjusted
     # Paint back-to-front so a nearer monke covers a farther one's residual overlap.
     for i in depth_order(faces):
         canvas = composite(canvas, monkes[i], placements[i])
