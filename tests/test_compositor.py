@@ -53,3 +53,18 @@ def test_monke_larger_than_canvas_is_centered_not_crashing():
     out = composite(base, monke, Placement(cx=20, cy=20, w=80, h=80, roll_deg=0))
     arr = np.array(out)
     assert tuple(arr[20, 20]) == (255, 0, 0, 255)  # whole canvas covered
+
+
+def test_clamp_false_lets_monke_go_off_canvas():
+    # With clamp=False (a manual user move), the monke is NOT slid back inside —
+    # it stays where placed and the part beyond the edge is simply cropped.
+    base = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    monke = _red_square(60)
+    # center at the right edge: half the monke should fall off-canvas
+    out = composite(base, monke, Placement(cx=200, cy=100, w=60, h=60, roll_deg=0), clamp=False)
+    arr = np.array(out)
+    red = (arr[:, :, 0] == 255) & (arr[:, :, 3] == 255)
+    # only the left half (~30 cols x 60 rows = 1800) remains on-canvas, not all 3600
+    assert int(red.sum()) < 60 * 60
+    assert red[100, 199]  # red present at the right edge (monke runs off to the right)
+    assert not red[100, 100]  # and NOT pulled back to the center
