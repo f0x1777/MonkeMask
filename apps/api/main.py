@@ -54,7 +54,6 @@ app.add_middleware(
 )
 app.state.sessions = SessionStore()
 app.state.detector = None
-app.state.embedder = None
 
 
 def _detector():
@@ -63,14 +62,6 @@ def _detector():
 
         app.state.detector = FaceDetector()
     return app.state.detector
-
-
-def _embedder():
-    if app.state.embedder is None:
-        from monkepic.embedder import FaceEmbedder
-
-        app.state.embedder = FaceEmbedder()
-    return app.state.embedder
 
 
 def _check(upload: UploadFile, data: bytes, limit: int) -> None:
@@ -167,82 +158,6 @@ async def add_generic(payload: dict):
     mid = "generic-daojones.png"
     (monkes_dir / mid).write_bytes(src.read_bytes())
     return {"id": mid, "thumb": service.monke_thumb(monkes_dir / mid)}
-
-
-@app.post("/api/people")
-async def add_person(
-    session: str = Form(...),
-    name: str = Form(...),
-    monke_id: str = Form(...),
-    faces: list[UploadFile] = None,
-):
-    store: SessionStore = app.state.sessions
-    if not store.exists(session):
-        raise HTTPException(404, "unknown or expired session")
-    monkes_dir = store.path(session) / "monkes"
-    if not (monkes_dir / monke_id).exists():
-        raise HTTPException(400, f"unknown monke_id: {monke_id}")
-    if len(store.people.get(session, [])) >= 200:
-        raise HTTPException(400, "too many people")
-
-    faces = faces or []
-    pid = f"p{len(store.people[session])}"
-    pdir = store.path(session) / "people" / pid
-    pdir.mkdir(parents=True, exist_ok=True)
-    face_paths = []
-    for n, f in enumerate(faces):
-        data = await f.read()
-        _check(f, data, MAX_MONKE_BYTES)
-        ext = Path(f.filename or "").suffix.lower()
-        fp = pdir / f"f{n}{ext}"
-        fp.write_bytes(data)
-        face_paths.append(fp)
-
-    embedding, usable = service.enroll_person(face_paths, _embedder(), _detector())
-    person = {
-        "person_id": pid,
-        "name": name,
-        "monke_id": monke_id,
-        "embedding": embedding,
-        "n_refs": len(face_paths),
-    }
-    # Only keep enrolled (usable) people in the suggest pool; still report the row.
-    if embedding is not None:
-        store.people[session].append(person)
-    return {
-        "person_id": pid,
-        "name": name,
-        "monke_id": monke_id,
-        "n_refs": len(face_paths),
-        "usable_refs": usable,
-    }
-
-
-@app.get("/api/people")
-def list_people(session: str):
-    store: SessionStore = app.state.sessions
-    if not store.exists(session):
-        raise HTTPException(404, "unknown or expired session")
-    return {
-        "people": [
-            {"person_id": p["person_id"], "name": p["name"], "monke_id": p["monke_id"],
-             "n_refs": p["n_refs"]}
-            for p in store.people.get(session, [])
-        ]
-    }
-
-
-@app.post("/api/suggest")
-async def suggest(payload: dict):
-    store: SessionStore = app.state.sessions
-    sid = payload.get("session")
-    if not sid or not store.exists(sid):
-        raise HTTPException(404, "unknown or expired session")
-    people = store.people.get(sid, [])
-    suggestions, unmatched = service.suggest(
-        store.path(sid) / "photo", people, _embedder(), _detector()
-    )
-    return {"suggestions": suggestions, "unmatched": unmatched}
 
 
 @app.post("/api/compose")

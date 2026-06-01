@@ -8,7 +8,6 @@ const NUDGE = 30; // px per nudge, in original-image pixels
 
 type Face = { index: number; x: number; y: number; w: number; h: number; thumb: string };
 type Monke = { id: string; thumb: string };
-type Person = { person_id: string; name: string; monke_id: string; n_refs: number; usable_refs: number };
 // One placed monke for the live (client-side) preview: its cutout + base placement
 // in original-image pixels. The user's live offsets are applied on top in the browser.
 type LayoutItem = {
@@ -34,13 +33,6 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Auto-suggest (in-session recognition).
-  const [people, setPeople] = useState<Person[]>([]);
-  const [pName, setPName] = useState("");
-  const [pMonke, setPMonke] = useState<string | null>(null);
-  const [unmatched, setUnmatched] = useState<number[]>([]);
-  const [suggestMsg, setSuggestMsg] = useState<string | null>(null);
 
   // Modal shown when some faces have no monke at Generate time.
   const [unassignedPrompt, setUnassignedPrompt] = useState<number | null>(null);
@@ -89,9 +81,6 @@ export default function Home() {
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
-      setPeople([]);
-      setUnmatched([]);
-      setSuggestMsg(null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -119,8 +108,6 @@ export default function Home() {
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
-      setUnmatched([]);
-      setSuggestMsg(null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -173,89 +160,6 @@ export default function Home() {
       return;
     }
     setSelectedMonke(selectedMonke === monkeId ? null : monkeId);
-  }
-
-  async function addPerson(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!session || !pName || !pMonke || !e.target.files?.length) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append("session", session);
-      fd.append("name", pName);
-      fd.append("monke_id", pMonke);
-      Array.from(e.target.files).forEach((f) => fd.append("faces", f));
-      const r = await fetch(`${API}/api/people`, { method: "POST", body: fd });
-      if (!r.ok) throw new Error((await r.json()).detail || "add person failed");
-      const p: Person = await r.json();
-      setPeople((ps) => [...ps, p]);
-      setPName("");
-      setPMonke(null);
-      if (p.usable_refs === 0)
-        setError(`No face found in ${p.name}'s reference photo(s) — not enrolled. Add a clearer photo.`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-      e.target.value = "";
-    }
-  }
-
-  async function autoSuggest() {
-    if (!session) return;
-    setBusy(true);
-    setError(null);
-    setSuggestMsg(null);
-    try {
-      const r = await fetch(`${API}/api/suggest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail || "suggest failed");
-      const data = await r.json();
-      setAssign((a) => {
-        const next = { ...a };
-        for (const s of data.suggestions) next[s.face_index] = s.monke_id;
-        return next;
-      });
-      setUnmatched(data.unmatched);
-      setSuggestMsg(
-        `Matched ${data.suggestions.length} of ${faces.length} faces.` +
-          (data.unmatched.length ? ` ${data.unmatched.length} not recognized.` : "")
-      );
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function useGenericForRest() {
-    if (!session) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fetch(`${API}/api/generic`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail || "generic failed");
-      const g = await r.json();
-      setMonkes((m) => (m.some((x) => x.id === g.id) ? m : [...m, g]));
-      setAssign((a) => {
-        const next = { ...a };
-        for (const fi of unmatched) next[fi] = g.id;
-        return next;
-      });
-      setUnmatched([]);
-      setSuggestMsg("Unrecognized faces set to the generic DAOJones monke.");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
   }
 
   function buildAssignments(assignMap: Record<number, string>, off: typeof offsets) {
@@ -418,11 +322,6 @@ export default function Home() {
     setDownloading(false);
     setError(null);
     setDragTarget(null);
-    setPeople([]);
-    setUnmatched([]);
-    setSuggestMsg(null);
-    setPName("");
-    setPMonke(null);
     setUnassignedPrompt(null);
   }
 
@@ -558,77 +457,6 @@ export default function Home() {
               );
             })}
           </div>
-
-          {/* Auto-suggest (optional) */}
-          <details style={{ marginTop: 18 }}>
-            <summary style={S.summary}>
-              ✨ Auto-suggest — recognize people and fill the pairs for you
-            </summary>
-            <p style={S.label}>
-              Add each person: their name, pick their monke above, and upload one or
-              more clear photos of their face. Then hit Auto-suggest. Reference
-              photos are processed on the server and deleted with your session.
-            </p>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              <input
-                placeholder="Person name"
-                value={pName}
-                onChange={(e) => setPName(e.target.value)}
-                style={S.input}
-              />
-              <select
-                value={pMonke ?? ""}
-                onChange={(e) => setPMonke(e.target.value || null)}
-                style={S.input}
-              >
-                <option value="">— their monke —</option>
-                {monkes.map((m, i) => (
-                  <option key={m.id} value={m.id}>
-                    monke {i + 1} ({m.id})
-                  </option>
-                ))}
-              </select>
-              <label style={{ ...S.uploadSmall, opacity: pName && pMonke ? 1 : 0.5 }}>
-                + Add reference face(s)
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={addPerson}
-                  disabled={busy || !pName || !pMonke}
-                  hidden
-                />
-              </label>
-            </div>
-
-            {people.length > 0 && (
-              <ul style={{ fontSize: 14, color: ui.textDim }}>
-                {people.map((p) => (
-                  <li key={p.person_id}>
-                    {p.name} — {p.usable_refs}/{p.n_refs} usable reference photo(s)
-                    {p.usable_refs === 0 ? " ⚠️ not enrolled" : " ✓"}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
-              <button
-                onClick={autoSuggest}
-                disabled={busy || people.length === 0}
-                style={S.secondary}
-              >
-                ✨ Auto-suggest
-              </button>
-              {unmatched.length > 0 && (
-                <button onClick={useGenericForRest} disabled={busy} style={S.secondary}>
-                  Use DAOJones for the {unmatched.length} unrecognized
-                </button>
-              )}
-            </div>
-            {suggestMsg && <p style={{ ...S.label, color: ui.good }}>{suggestMsg}</p>}
-          </details>
 
           <button onClick={generate} disabled={busy} style={S.primary} className="lift">
             {busy ? (

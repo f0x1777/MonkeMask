@@ -6,16 +6,13 @@ from pathlib import Path
 
 from PIL import Image
 
-import numpy as np
-
 from monkepic import geometry
 from monkepic.background import ensure_transparent
 from monkepic.compositor import composite
 from monkepic.facefilter import filter_background
 from monkepic.layout import depth_order, resolve_overlaps
 from monkepic.loader import load_image
-from monkepic.recognizer import Recognizer
-from monkepic.types import Placement, PersonEntry
+from monkepic.types import Placement
 
 # Adapter layer: bytes in -> monkepic core -> bytes/JSON out. No image logic of its
 # own; it only marshals data and calls the shared core so the web cannot drift from
@@ -67,69 +64,6 @@ def placement_for(region, monke: Image.Image, *, margin: float = 1.0,
     """Build the Placement for a face using the SAME geometry as the CLI."""
     return geometry.placement_for(region, monke.width, monke.height,
                                   margin=margin, rotate=rotate)
-
-
-def enroll_person(face_paths, embedder, detector):
-    """Average the embeddings of a person's reference face photos. Returns
-    ``(embedding_tuple | None, usable_refs)``. Reuses the same embedder+detector
-    path as the CLI gallery so similarities are comparable at suggest time."""
-    vecs = []
-    for fp in face_paths:
-        try:
-            image = load_image(fp)
-            regions = detector.detect(image)
-            if not regions:
-                continue
-            vecs.append(embedder.embed(image, regions[0]))
-        except Exception:
-            continue
-    if not vecs:
-        return None, 0
-    mean = np.mean(np.array(vecs, dtype=float), axis=0)
-    mean = mean / max(float(np.linalg.norm(mean)), 1e-12)
-    return tuple(mean.tolist()), len(vecs)
-
-
-def suggest(photo_path, people, embedder, detector, *, threshold: float = 0.5):
-    """For each non-background face, match against the session ``people`` and return
-    ``(suggestions, unmatched)``. ``people`` is a list of dicts with keys
-    ``person_id``, ``monke_id``, ``embedding``. Unmatched = faces below threshold or
-    whose embedding fails (never a silent wrong assignment)."""
-    image = load_image(photo_path)
-    regions = filter_background(detector.detect(image))
-
-    gallery = [
-        PersonEntry(p["person_id"], Path(p["monke_id"]), tuple(p["embedding"]), 1)
-        for p in people
-        if p.get("embedding") is not None
-    ]
-    by_pid = {p["person_id"]: p for p in people}
-    # generic_monke path is irrelevant here; we only read the matched person.
-    rec = Recognizer(gallery, Path("generic"), threshold) if gallery else None
-
-    suggestions = []
-    unmatched = []
-    for i, _r in enumerate(regions):
-        if rec is None:
-            unmatched.append(i)
-            continue
-        try:
-            emb = embedder.embed(image, _r)
-        except Exception:
-            unmatched.append(i)
-            continue
-        result = rec.match(emb)
-        if result.is_generic or result.person is None:
-            unmatched.append(i)
-        else:
-            person = by_pid[result.person]
-            suggestions.append({
-                "face_index": i,
-                "person_id": result.person,
-                "monke_id": person["monke_id"],
-                "similarity": round(result.similarity, 4),
-            })
-    return suggestions, unmatched
 
 
 def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,

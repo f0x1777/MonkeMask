@@ -19,19 +19,10 @@ class FakeDetector:
         ]
 
 
-class FakeEmbedder:
-    """Face at x<100 -> vector A, else vector B (deterministic for suggest tests)."""
-
-    def embed(self, image, region):
-        v = np.array([1.0, 0.0, 0.0] if region.x < 100 else [0.0, 0.0, 1.0], dtype=float)
-        return v / np.linalg.norm(v)
-
-
 @pytest.fixture
 def client(tmp_path):
     main.app.state.sessions = SessionStore(root=tmp_path)
     main.app.state.detector = FakeDetector()
-    main.app.state.embedder = FakeEmbedder()
     return TestClient(main.app)
 
 
@@ -168,60 +159,6 @@ def test_generic_endpoint_adds_daojones(client):
     assert g.status_code == 200
     assert g.json()["id"] == "generic-daojones.png"
     assert g.json()["thumb"].startswith("data:image/png;base64,")
-
-
-def test_people_and_suggest_flow(client):
-    # detect -> upload a monke -> add a person (monke + a reference face) -> suggest
-    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
-    sid = r.json()["session"]
-    mid = client.post(
-        "/api/monkes",
-        data={"session": sid},
-        files=[("files", ("g.png", _monke_bytes([0, 255, 0]), "image/png"))],
-    ).json()["monkes"][0]["id"]
-
-    # The reference face embeds (via FakeEmbedder) to vector A (x<100 in FakeDetector).
-    rp = client.post(
-        "/api/people",
-        data={"session": sid, "name": "Nico", "monke_id": mid},
-        files=[("faces", ("ref.png", _photo_bytes(), "image/png"))],
-    )
-    assert rp.status_code == 200
-    assert rp.json()["usable_refs"] == 1
-
-    s = client.post("/api/suggest", json={"session": sid})
-    body = s.json()
-    # face 0 (x=20 -> vector A) matches Nico; face 1 (x=180 -> vector B) unmatched
-    assert len(body["suggestions"]) == 1
-    assert body["suggestions"][0]["face_index"] == 0
-    assert body["suggestions"][0]["monke_id"] == mid
-    assert body["unmatched"] == [1]
-
-
-def test_suggest_no_people_all_unmatched(client):
-    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
-    sid = r.json()["session"]
-    body = client.post("/api/suggest", json={"session": sid}).json()
-    assert body["suggestions"] == []
-    assert body["unmatched"] == [0, 1]
-
-
-def test_people_cleared_on_session_delete(client):
-    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
-    sid = r.json()["session"]
-    mid = client.post(
-        "/api/monkes",
-        data={"session": sid},
-        files=[("files", ("g.png", _monke_bytes([0, 255, 0]), "image/png"))],
-    ).json()["monkes"][0]["id"]
-    client.post(
-        "/api/people",
-        data={"session": sid, "name": "Nico", "monke_id": mid},
-        files=[("faces", ("ref.png", _photo_bytes(), "image/png"))],
-    )
-    assert client.app.state.sessions.people.get(sid)
-    client.delete(f"/api/session/{sid}")
-    assert sid not in client.app.state.sessions.people
 
 
 def test_rotate_redetects_and_returns_faces(client):

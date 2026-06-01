@@ -13,9 +13,9 @@ without exposing people's faces.
 ## ▶️ Try it now (no install)
 
 **[monkemask.vercel.app](https://monkemask.vercel.app)** — a hosted web app. Upload
-a group photo, pair each face with a monke (or auto-suggest), and download the
-result. The photo is processed on the server and **deleted right after** — never
-stored or shared.
+a group photo, pair each face with a monke, drag to fine-tune in a live preview, and
+download the result. The photo is processed on the server and **deleted right after**
+— never stored or shared.
 
 ## 🔒 Or run it yourself (100% private)
 
