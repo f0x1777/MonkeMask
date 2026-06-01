@@ -86,6 +86,24 @@ def test_build_gallery_skips_unreadable_face(tmp_path):
     assert gallery == []  # only face failed -> person not enrolled
 
 
+def test_build_gallery_warns_on_embed_failure(tmp_path, capsys):
+    # A silent enrollment failure once masked a real bug (10/11 people dropped).
+    # Embedding failures and "not enrolled" must be reported to stderr.
+    nico = tmp_path / "01 - Nico"
+    _img(nico / "Nico - SMB #1.png")
+    _img(nico / "face_a.png")
+
+    class BadEmbedder(FakeEmbedder):
+        def embed(self, image, region):
+            raise ValueError("no face found in crop")
+
+    build_gallery(tmp_path, BadEmbedder(), FakeDetector())
+    err = capsys.readouterr().err
+    assert "face_a.png" in err
+    assert "Nico" in err
+    assert "not enrolled" in err
+
+
 def test_cache_reuse_then_rebuild_on_change(tmp_path):
     nico = tmp_path / "01 - Nico"
     _img(nico / "Nico - SMB #1.png")

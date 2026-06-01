@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -52,11 +53,25 @@ def build_gallery(ourmonke_dir, embedder, detector) -> list[PersonEntry]:
                 image = load_image(face_path)
                 regions = detector.detect(image)
                 if not regions:
+                    print(
+                        f"warning: no face detected in {face_path.name} "
+                        f"for {name!r}; skipping this reference photo",
+                        file=sys.stderr,
+                    )
                     continue
                 vecs.append(embedder.embed(image, regions[0]))
-            except Exception:
+            except Exception as exc:
+                print(
+                    f"warning: could not embed {face_path.name} for {name!r}: {exc}",
+                    file=sys.stderr,
+                )
                 continue
         if not vecs:
+            print(
+                f"warning: {name!r} has no usable face photos; not enrolled "
+                f"(faces will fall back to the generic monke)",
+                file=sys.stderr,
+            )
             continue
         mean = np.mean(np.array(vecs, dtype=float), axis=0)
         mean = mean / max(float(np.linalg.norm(mean)), 1e-12)
@@ -65,15 +80,15 @@ def build_gallery(ourmonke_dir, embedder, detector) -> list[PersonEntry]:
 
 
 def _gallery_fingerprint(ourmonke_dir: Path) -> str:
-    """Hash of every face photo's path + mtime, so the cache invalidates when
-    reference photos are added/removed/changed."""
+    """Hash of every reference photo AND monke file (path + mtime), so the cache
+    invalidates when reference photos or the assigned monke change."""
     root = Path(ourmonke_dir)
     parts: list[str] = []
     for folder in sorted(p for p in root.iterdir() if p.is_dir()):
         if _person_name(folder) is None:
             continue
-        _monke, faces = parse_person_folder(folder)
-        for f in faces:
+        monke, faces = parse_person_folder(folder)
+        for f in ([monke] if monke is not None else []) + faces:
             parts.append(f"{f}:{f.stat().st_mtime_ns}")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 

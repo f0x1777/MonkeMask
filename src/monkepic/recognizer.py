@@ -14,6 +14,9 @@ class Recognizer:
     def __init__(self, gallery: list[PersonEntry], generic_monke: Path, threshold: float = 0.5):
         self._generic = Path(generic_monke)
         self._threshold = threshold
+        # Defensive: skip any entry without an embedding (the type allows None,
+        # though build_gallery never produces one).
+        gallery = [p for p in gallery if p.embedding is not None]
         self._names = [p.name for p in gallery]
         self._monkes = [p.monke_path for p in gallery]
         if gallery:

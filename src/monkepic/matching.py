@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from .facefilter import filter_background
@@ -34,7 +35,14 @@ def process_image_matched(
     # composes exactly the faces we keep (and exports crops for those only).
     class _FilteringDetector:
         def detect(self, image) -> list[FaceRegion]:
-            return filter_background(detector.detect(image), min_ratio, min_px)
+            kept = filter_background(detector.detect(image), min_ratio, min_px)
+            if not kept:
+                print(
+                    "warning: all detected faces were filtered as background; "
+                    "output is unchanged",
+                    file=sys.stderr,
+                )
+            return kept
 
     def choose(regions: list[FaceRegion]):
         image = load_image(src)
@@ -43,7 +51,14 @@ def process_image_matched(
             try:
                 emb = embedder.embed(image, r)
                 out.append(recognizer.match(emb).monke_path)
-            except Exception:
+            except Exception as exc:
+                # An embedding failure is indistinguishable from "unknown" in the
+                # output (both -> generic), so surface it rather than hide it.
+                print(
+                    f"warning: could not embed face at ({r.x},{r.y}): {exc}; "
+                    "using the generic monke",
+                    file=sys.stderr,
+                )
                 out.append(generic_monke)
         return out
 
