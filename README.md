@@ -96,7 +96,7 @@ photo ──▶ detect faces ──▶ for each face:
                               scale to cover the head
                               rotate to the head tilt
                               paste it on
-          ──▶ output/<name>-monked.png
+          ──▶ <name>-monked.png  (next to the input)
 ```
 
 1. **Detect faces** — OpenCV [YuNet](https://github.com/opencv/opencv_zoo) run at
@@ -130,6 +130,7 @@ MonkePic/
 │   └── types.py           # FaceRegion, Placement
 ├── tests/                 # pytest suite (TDD)
 ├── docs/specs/            # spec + implementation plan
+├── MonkeDAO_DAOJones.png  # generic monke (DAOJones) for unrecognized faces
 ├── README.md
 └── pyproject.toml
 ```
@@ -141,14 +142,13 @@ These hold images and outputs and are **gitignored** — bring your own:
 | Folder | What goes here |
 | --- | --- |
 | `<monkes>/` | Monke images to use (any folder you pass to `--monkes`). Supports png, jpg, webp, avif. |
-| `Photos/` | Input photos to anonymize. |
-| `output/` | Generated results (`*-monked.png`). |
+| `Photos/` | Input photos to anonymize. Results (`*-monked.png`) land here too, next to each input, unless you pass `--out`. |
 | `faces/_inbox/` | Face crops emitted by `--export-crops`, to be sorted for the matching dataset. |
 | `models/`, `.monke-cache/` | Auto-downloaded models and cached transparent monkes. |
 
-> ⚠️ **Privacy:** `Photos/`, `faces/`, `output/` and the monke folders are
-> gitignored on purpose so real faces and personal data are never committed. Keep
-> it that way if you fork this repo.
+> ⚠️ **Privacy:** `Photos/`, `faces/`, the monke folders and all generated
+> `*-monked.*` files are gitignored on purpose so real faces and personal data are
+> never committed. Keep it that way if you fork this repo.
 
 ---
 

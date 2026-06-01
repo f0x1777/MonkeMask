@@ -153,7 +153,8 @@ Without `--match`, all existing Phase 1 flags/behavior are unchanged.
 ## 7. Error handling
 
 - No enrolled persons (empty/no face photos) → warn; every face → generic.
-- Generic monke file missing → error with a clear message (it ships in `assets/`).
+- Generic monke file missing → error with a clear message (it ships as
+  `MonkeDAO_DAOJones.png` at the repo root).
 - A reference photo with no detectable face → skip it with a warning; person still
   enrolls from remaining photos (or is skipped if none usable).
 - Face embedding fails on a detected face → treat as unrecognized → generic.
@@ -163,7 +164,7 @@ Without `--match`, all existing Phase 1 flags/behavior are unchanged.
 
 - Fully local; InsightFace models download once. Reference photos and embeddings
   never leave the machine. `OurMonke/`, `.monke-cache/` remain gitignored; only the
-  generic monke (`assets/`) is committed.
+  generic monke (`MonkeDAO_DAOJones.png`, at the repo root) is committed.
 
 ## 9. Dependencies (added)
 
