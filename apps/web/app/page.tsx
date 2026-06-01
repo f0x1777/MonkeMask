@@ -80,10 +80,12 @@ export default function Home() {
     }
   }
 
-  function pickMonke(monkeId: string) {
+  function pickMonke(monkeId: string, el?: HTMLElement) {
     if (selectedFace === null) return;
     setAssign((a) => ({ ...a, [selectedFace]: monkeId }));
     setSelectedFace(null);
+    // Clear the focus ring so the just-clicked monke doesn't look "selected".
+    el?.blur();
   }
 
   async function addPerson(e: React.ChangeEvent<HTMLInputElement>) {
@@ -304,8 +306,8 @@ export default function Home() {
             </span>
           </h1>
           <p style={S.tagline}>
-            Cover every face in a group photo with a monke — <strong>no editing
-            skills needed.</strong> 🐵
+            Get your event photo <strong>ready for socials</strong> in one second —
+            no editing headaches. 🐵
           </p>
           <div style={S.badges}>
             <span style={S.badge}>🔒 100% private</span>
@@ -314,11 +316,6 @@ export default function Home() {
             <span style={S.badge}>🇦🇷 by MonkeDAO Argentina</span>
           </div>
         </header>
-
-        <p style={S.privacy}>
-          🔒 Your photo is processed on the server and deleted right after — never
-          stored or shared.
-        </p>
 
         {error && (
           <div style={S.errorBox} className="pop-in">
@@ -340,6 +337,10 @@ export default function Home() {
               <span style={S.spinner} /> detecting faces…
             </span>
           )}
+          <p style={S.privacy}>
+            🔒 Your photo is processed on the server and deleted right after — never
+            stored or shared.
+          </p>
         </section>
 
         {/* Step 2 */}
@@ -365,7 +366,11 @@ export default function Home() {
               <button
                 key={f.index}
                 style={S.thumbBtn(selectedFace === f.index, !!assign[f.index])}
-                onClick={() => setSelectedFace(f.index)}
+                onClick={(e) => {
+                  // Toggle: clicking the selected face again deselects it.
+                  setSelectedFace(selectedFace === f.index ? null : f.index);
+                  e.currentTarget.blur();
+                }}
                 title={`face #${f.index}`}
               >
                 <img src={f.thumb} alt={`face ${f.index}`} style={S.thumbImg} />
@@ -386,7 +391,7 @@ export default function Home() {
               <button
                 key={m.id}
                 style={S.thumbBtn(false, false)}
-                onClick={() => pickMonke(m.id)}
+                onClick={(e) => pickMonke(m.id, e.currentTarget)}
                 disabled={selectedFace === null}
                 title={selectedFace === null ? "select a face first" : `assign to face #${selectedFace}`}
               >
@@ -624,8 +629,7 @@ const S: Record<string, any> = {
   privacy: {
     color: ui.textDim,
     fontSize: 13,
-    margin: "0 0 24px",
-    textAlign: "center",
+    margin: "14px 0 0",
   },
   errorBox: {
     background: ui.danger,
