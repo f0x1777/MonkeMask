@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -38,6 +39,82 @@ def border_flood_cutout(img: Image.Image, tol: int = 42) -> Image.Image:
                 if int(np.abs(rgb[ny, nx] - c).max()) <= tol:
                     bg[ny, nx] = True
                     dq.append((ny, nx))
+    out = np.array(img.convert("RGBA"))
+    out[bg, 3] = 0
+    return Image.fromarray(out, "RGBA")
+
+
+def _border_palette(rgb: np.ndarray, dark_lum: int, min_frac: float) -> np.ndarray | None:
+    """NON-dark colours of the 2px border ring that each cover at least ``min_frac``
+    of the (non-dark) border, as an (k,3) int16 array. A frequency floor (rather than
+    a cumulative cover) keeps BOTH a dominant gradient and the recurring checker-dot
+    colour (each a few percent), while excluding a thin subject intrusion at the edge
+    (e.g. a suit corner) and pixel noise. Always keeps at least the top colour."""
+    ring = np.concatenate([
+        rgb[0:2].reshape(-1, 3), rgb[-2:].reshape(-1, 3),
+        rgb[:, 0:2].reshape(-1, 3), rgb[:, -2:].reshape(-1, 3),
+    ])
+    ring = ring[ring.mean(axis=1) >= dark_lum]  # drop dark outline/suit at the border
+    if len(ring) == 0:
+        return None
+    quant = (ring // 12 * 12)
+    counts = Counter(map(tuple, quant.tolist()))
+    total = len(ring)
+    palette = [c for c, n in counts.most_common() if n / total >= min_frac]
+    if not palette:  # everything below the floor: fall back to the single top colour
+        palette = [counts.most_common(1)[0][0]]
+    return np.array(palette, dtype=np.int16)
+
+
+def palette_border_cutout(
+    img: Image.Image, tol: int = 46, dark_lum: int = 105, min_frac: float = 0.02,
+    core: np.ndarray | None = None,
+) -> Image.Image:
+    """Remove an SMB-style background (smooth pastel gradient + a regular checker-dot
+    overlay) that the local-similarity ``border_flood_cutout`` mishandles — it tunnels
+    into a similarly-coloured suit and leaves high-contrast checker specks.
+
+    Builds the background palette from the non-dark border ring, then floods inward
+    from the border marking any border-connected pixel within ``tol`` of SOME palette
+    colour as background. The dark monke outline (luminance < ``dark_lum``) is a wall
+    the flood cannot cross, so it can't tunnel into the suit. When ``core`` (a boolean
+    subject mask the size of the image) is given, a second colour pass also clears
+    palette-matching pixels OUTSIDE the core — removing background trapped inside the
+    outline (e.g. between hat and face) while protecting the suit the core covers."""
+    rgb = np.array(img.convert("RGB"), dtype=np.int16)
+    h, w = rgb.shape[:2]
+    lum = rgb.mean(axis=2)
+    palette = _border_palette(rgb, dark_lum, min_frac)
+    if palette is None:
+        return img.convert("RGBA")  # all-dark border: can't infer a background
+    # match[y,x] = pixel is background-coloured (near some palette colour) and not the
+    # dark outline. Computed via broadcasting over the small palette.
+    dist = np.abs(rgb[:, :, None, :] - palette[None, None, :, :]).max(axis=3)
+    match = (dist.min(axis=2) <= tol) & (lum >= dark_lum)
+    # ``core`` pixels are known subject: never removable, and impassable to the flood
+    # (so it can't reach a suit even on a flat field with no enclosing outline).
+    removable = match if core is None else (match & ~core)
+    bg = np.zeros((h, w), dtype=bool)
+    dq: deque[tuple[int, int]] = deque()
+    for x in range(w):
+        for y in (0, h - 1):
+            if removable[y, x] and not bg[y, x]:
+                bg[y, x] = True
+                dq.append((y, x))
+    for y in range(h):
+        for x in (0, w - 1):
+            if removable[y, x] and not bg[y, x]:
+                bg[y, x] = True
+                dq.append((y, x))
+    while dq:
+        y, x = dq.popleft()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and not bg[ny, nx] and removable[ny, nx]:
+                bg[ny, nx] = True
+                dq.append((ny, nx))
+    if core is not None:
+        bg |= removable  # colour pass: clear trapped bg everywhere outside the core
     out = np.array(img.convert("RGBA"))
     out[bg, 3] = 0
     return Image.fromarray(out, "RGBA")
@@ -169,16 +246,40 @@ def _resize_mask(mask: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     return np.array(m) > 127
 
 
+_SILHOUETTE_ASSET = Path(__file__).parent / "assets" / "smb_silhouette.npz"
+_silhouette_cache: tuple[np.ndarray, np.ndarray] | None | str = "unset"
+
+
+def load_smb_silhouette() -> tuple[np.ndarray, np.ndarray] | None:
+    """Load the bundled consensus SMB silhouette ``(core, far)`` (cached). The asset
+    is a tiny bit-packed pair of 256x256 masks averaged from many solid-background
+    monkes; it encodes the shared SMB head+body shape so gradient/checker-background
+    monkes can be reconstructed. Returns ``None`` if the asset is absent."""
+    global _silhouette_cache
+    if _silhouette_cache == "unset":
+        if _SILHOUETTE_ASSET.exists():
+            data = np.load(_SILHOUETTE_ASSET)
+            size = int(data["size"])
+            n = size * size
+            core = np.unpackbits(data["core"])[:n].reshape(size, size).astype(bool)
+            far = np.unpackbits(data["far"])[:n].reshape(size, size).astype(bool)
+            _silhouette_cache = (core, far)
+        else:
+            _silhouette_cache = None
+    return _silhouette_cache if _silhouette_cache != "unset" else None
+
+
 def ensure_transparent(
-    img: Image.Image, tol: int = 25, rembg_fn=_default_rembg, silhouette=None
+    img: Image.Image, tol: int = 25, rembg_fn=_default_rembg, silhouette="auto"
 ) -> Image.Image:
     """Return an RGBA monke with its background removed AND trimmed to its opaque
     content. Tier is chosen automatically:
     - alpha pass-through (already transparent);
     - solid-colour cutout (flat background);
-    - gradient/multi-colour background: border-flood, refined by a consensus monke
-      silhouette when ``silhouette=(core, far)`` is supplied (recommended), else a
-      plain border-flood; rembg is the last resort.
+    - gradient/checker background: a palette-aware border cutout (handles the SMB
+      pastel-gradient + checker-dot background), refined by a consensus monke
+      silhouette. ``silhouette`` is ``"auto"`` (load the bundled SMB template),
+      an explicit ``(core, far)`` pair, or ``None`` (no silhouette refinement).
     Trimming ensures the monke actually covers the head."""
     tier = select_tier(img, tol)
     if tier == "alpha":
@@ -186,13 +287,17 @@ def ensure_transparent(
     elif tier == "solid":
         cut = solid_cutout(img, tol)
     else:
-        flooded = border_flood_cutout(img)
+        if silhouette == "auto":
+            silhouette = load_smb_silhouette()
         if silhouette is not None:
             core, far = silhouette
-            w, h = flooded.size
+            w, h = img.size
+            core_m, far_m = _resize_mask(core, (w, h)), _resize_mask(far, (w, h))
+            # Palette cutout with the core protecting the suit; silhouette then
+            # rescues any subject the cut still ate and clips leftover background.
             cut = combine_with_silhouette(
-                flooded, _resize_mask(core, (w, h)), _resize_mask(far, (w, h))
+                palette_border_cutout(img, core=core_m), core_m, far_m
             )
         else:
-            cut = flooded
+            cut = palette_border_cutout(img)
     return trim_transparent(cut)

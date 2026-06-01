@@ -5,6 +5,8 @@ from monkepic.background import (
     ensure_transparent,
     has_alpha,
     is_solid_background,
+    load_smb_silhouette,
+    palette_border_cutout,
     select_tier,
     solid_cutout,
 )
@@ -116,6 +118,59 @@ def test_border_flood_cutout_removes_gradient_border():
     assert out.mode == "RGBA"
     assert a[0, 0, 3] == 0  # gradient corner removed
     assert a[30, 30, 3] == 255  # dark center kept
+
+
+def test_palette_border_cutout_removes_gradient_and_checker():
+    # SMB-style background: pastel vertical gradient + a regular checker-dot overlay,
+    # with a saturated subject block enclosed by a dark outline (the monke's outline).
+    arr = np.zeros((60, 60, 3), dtype=np.uint8)
+    for y in range(60):
+        arr[y, :] = [180 + y // 2, 170, 240 - y // 2]  # pastel gradient
+    arr[::4, ::4] = [210, 230, 250]  # checker dots
+    arr[22:38, 22:38] = [220, 30, 30]  # subject: saturated red
+    arr[20:40, 20:22] = arr[20:40, 38:40] = [10, 10, 12]  # dark outline sides
+    arr[20:22, 20:40] = arr[38:40, 20:40] = [10, 10, 12]  # dark outline top/bottom
+    img = Image.fromarray(arr, "RGB")
+    out = np.array(palette_border_cutout(img))
+    assert out[0, 0, 3] == 0  # gradient corner removed
+    assert out[0, 4, 3] == 0  # a checker dot removed too
+    assert out[30, 30, 3] == 255  # saturated subject kept
+
+
+def test_palette_border_cutout_color_pass_clears_trapped_bg_outside_core():
+    # A flat pastel field with a red subject blob. With a core protecting only the
+    # blob, the colour pass must clear bg-coloured pixels everywhere outside the core
+    # (this is what removes background trapped inside the monke's outline).
+    arr = np.full((60, 60, 3), [200, 200, 210], np.uint8)
+    arr[25:35, 25:35] = [200, 30, 30]  # red subject (not a bg colour)
+    img = Image.fromarray(arr, "RGB")
+    core = np.zeros((60, 60), bool)
+    core[25:35, 25:35] = True
+    out = np.array(palette_border_cutout(img, core=core))
+    assert out[0, 0, 3] == 0  # border bg removed
+    assert out[10, 10, 3] == 0  # interior bg-coloured pixel removed by colour pass
+    assert out[30, 30, 3] == 255  # red subject kept
+
+
+def test_palette_border_cutout_core_protects_bg_coloured_subject():
+    # A suit whose colour equals the background must survive when it is inside core.
+    arr = np.full((60, 60, 3), [200, 200, 210], np.uint8)
+    img = Image.fromarray(arr, "RGB")
+    core = np.zeros((60, 60), bool)
+    core[25:35, 25:35] = True
+    out = np.array(palette_border_cutout(img, core=core))
+    assert out[30, 30, 3] == 255  # bg-coloured pixel protected by core
+    assert out[5, 5, 3] == 0  # but plain bg outside core is removed
+
+
+def test_load_smb_silhouette_returns_consistent_masks():
+    sil = load_smb_silhouette()
+    assert sil is not None  # the asset ships with the package
+    core, far = sil
+    assert core.shape == far.shape
+    assert core.dtype == bool and far.dtype == bool
+    assert int(core.sum()) > 0
+    assert int((core & ~far).sum()) == 0  # core is a subset of far
 
 
 def test_combine_with_silhouette_rescues_and_clips():
