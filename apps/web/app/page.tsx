@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ui } from "./theme";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
@@ -9,6 +9,14 @@ const NUDGE = 30; // px per nudge, in original-image pixels
 type Face = { index: number; x: number; y: number; w: number; h: number; thumb: string };
 type Monke = { id: string; thumb: string };
 type Person = { person_id: string; name: string; monke_id: string; n_refs: number; usable_refs: number };
+// One placed monke for the live (client-side) preview: its cutout + base placement
+// in original-image pixels. The user's live offsets are applied on top in the browser.
+type LayoutItem = {
+  face_index: number;
+  monke: string; // data URL of the cut-out monke
+  cx: number; cy: number; w: number; h: number; roll_deg: number; z: number;
+};
+type Layout = { image: { w: number; h: number }; items: LayoutItem[] };
 
 export default function Home() {
   const [session, setSession] = useState<string | null>(null);
@@ -19,8 +27,12 @@ export default function Home() {
     useState<Record<number, { dx: number; dy: number; scale: number }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
   const [selectedMonke, setSelectedMonke] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  // Live preview: cutouts + base placements (server) edited locally; the heavy
+  // server render only runs once, on Download.
+  const [layout, setLayout] = useState<Layout | null>(null);
+  const [dispW, setDispW] = useState(0); // displayed width of the preview photo, px
   const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Auto-suggest (in-session recognition).
@@ -35,7 +47,18 @@ export default function Home() {
 
   // Which assigned face the drag-on-result moves.
   const [dragTarget, setDragTarget] = useState<number | null>(null);
-  const resultImgRef = useRef<HTMLImageElement | null>(null);
+  const previewImgRef = useRef<HTMLImageElement | null>(null);
+
+  // Keep the overlay scale in sync with the displayed photo width on window resize
+  // (the monke positions are computed from dispW / image width).
+  useEffect(() => {
+    if (!layout) return;
+    const onResize = () => {
+      if (previewImgRef.current) setDispW(previewImgRef.current.clientWidth);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [layout]);
 
   // Turn backend errors into a user-friendly message (esp. expired sessions).
   function friendlyError(msg: string): string {
@@ -62,7 +85,7 @@ export default function Home() {
       setMonkes([]);
       setAssign({});
       setOffsets({});
-      setResultUrl(null);
+      setLayout(null);
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
@@ -92,7 +115,7 @@ export default function Home() {
       // Rotation renumbers faces; clear assignments/results to stay consistent.
       setAssign({});
       setOffsets({});
-      setResultUrl(null);
+      setLayout(null);
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
@@ -242,16 +265,6 @@ export default function Home() {
     });
   }
 
-  async function composeWith(sid: string, off: typeof offsets) {
-    const r = await fetch(`${API}/api/compose`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session: sid, assignments: buildAssignments(assign, off) }),
-    });
-    if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "compose failed"));
-    setResultUrl(URL.createObjectURL(await r.blob()));
-  }
-
   async function generate() {
     if (!session) return;
     const unassigned = faces.filter((f) => !assign[f.index]).length;
@@ -260,24 +273,25 @@ export default function Home() {
       setUnassignedPrompt(unassigned);
       return;
     }
-    await runCompose(assign);
+    await fetchLayout(assign);
   }
 
-  // Compose with an explicit assignment map (so we can compose right after
-  // mutating assignments without waiting for React state to settle).
-  async function runCompose(assignMap: Record<number, string>) {
+  // Fetch the cutouts + base placements for the live preview (no server render).
+  // Takes an explicit assignment map so it can run right after mutating assignments
+  // without waiting for React state to settle.
+  async function fetchLayout(assignMap: Record<number, string>) {
     if (!session) return;
     setUnassignedPrompt(null);
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${API}/api/compose`, {
+      const r = await fetch(`${API}/api/layout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, assignments: buildAssignments(assignMap, offsets) }),
+        body: JSON.stringify({ session, assignments: buildAssignments(assignMap, {}) }),
       });
-      if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "compose failed"));
-      setResultUrl(URL.createObjectURL(await r.blob()));
+      if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "layout failed"));
+      setLayout(await r.json());
     } catch (err: any) {
       setError(friendlyError(err.message));
     } finally {
@@ -285,7 +299,7 @@ export default function Home() {
     }
   }
 
-  // Modal choice A: cover the unassigned faces with the generic DAOJones, then compose.
+  // Modal choice A: cover the unassigned faces with the generic DAOJones, then preview.
   async function coverRestWithGeneric() {
     if (!session) return;
     setBusy(true);
@@ -302,91 +316,86 @@ export default function Home() {
       const next = { ...assign };
       for (const f of faces) if (!next[f.index]) next[f.index] = g.id;
       setAssign(next);
-      await runCompose(next);
+      await fetchLayout(next);
     } catch (err: any) {
       setError(err.message);
       setBusy(false);
     }
   }
 
-  // Modal choice B: leave the unassigned faces visible, compose as-is.
+  // Modal choice B: leave the unassigned faces visible, preview as-is.
   async function leaveRestVisible() {
-    await runCompose(assign);
+    await fetchLayout(assign);
   }
 
-  async function nudge(faceIndex: number, dx: number, dy: number) {
-    if (!session) return;
-    const cur = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
-    const next = { ...offsets, [faceIndex]: { ...cur, dx: cur.dx + dx, dy: cur.dy + dy } };
-    setOffsets(next);
-    setBusy(true);
-    setError(null);
-    try {
-      await composeWith(session, next);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+  // All adjustments below are INSTANT and local: they only update `offsets`, which
+  // the preview overlay reads. No server round-trip until Download.
+  function nudge(faceIndex: number, dx: number, dy: number) {
+    setOffsets((o) => {
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+      return { ...o, [faceIndex]: { ...cur, dx: cur.dx + dx, dy: cur.dy + dy } };
+    });
   }
 
-  async function resize(faceIndex: number, factor: number) {
-    if (!session) return;
-    const cur = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
-    const scale = Math.min(4, Math.max(0.25, cur.scale * factor));
-    const next = { ...offsets, [faceIndex]: { ...cur, scale } };
-    setOffsets(next);
-    setBusy(true);
-    setError(null);
-    try {
-      await composeWith(session, next);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+  function resize(faceIndex: number, factor: number) {
+    setOffsets((o) => {
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+      const scale = Math.min(4, Math.max(0.25, cur.scale * factor));
+      return { ...o, [faceIndex]: { ...cur, scale } };
+    });
   }
 
-  // Drag a monke on the result image. Screen-pixel movement is scaled to
-  // original-image pixels (naturalWidth / displayed width). Uses window mouse
-  // events so the drag survives the pointer leaving the image.
-  function onResultMouseDown(e: React.MouseEvent<HTMLImageElement>) {
-    if (dragTarget === null || !session) return;
+  // Drag a monke directly on the preview. Screen movement is converted to
+  // original-image pixels via the displayed scale and applied live (no server).
+  function onMonkeMouseDown(faceIndex: number, e: React.MouseEvent) {
+    if (!layout || !dispW) return;
     e.preventDefault();
+    e.stopPropagation();
+    setDragTarget(faceIndex);
     const startX = e.clientX;
     const startY = e.clientY;
-    const face = dragTarget;
-    const sid = session;
-    let dx = 0;
-    let dy = 0;
+    const start = offsets[faceIndex] || { dx: 0, dy: 0, scale: 1 };
+    const scale = dispW / layout.image.w; // display px per image px
 
     const onMove = (ev: MouseEvent) => {
-      dx = ev.clientX - startX;
-      dy = ev.clientY - startY;
+      const ddx = (ev.clientX - startX) / scale;
+      const ddy = (ev.clientY - startY) / scale;
+      setOffsets((o) => ({
+        ...o,
+        [faceIndex]: { ...start, dx: start.dx + ddx, dy: start.dy + ddy },
+      }));
     };
-    const onUp = async () => {
+    const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      const img = resultImgRef.current;
-      const px = img && img.clientWidth ? img.naturalWidth / img.clientWidth : 1;
-      const ddx = dx * px;
-      const ddy = dy * px;
-      if (Math.abs(ddx) < 1 && Math.abs(ddy) < 1) return; // ignore taps
-      const cur = offsets[face] || { dx: 0, dy: 0, scale: 1 };
-      const next = { ...offsets, [face]: { ...cur, dx: cur.dx + ddx, dy: cur.dy + ddy } };
-      setOffsets(next);
-      setBusy(true);
-      setError(null);
-      try {
-        await composeWith(sid, next);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setBusy(false);
-      }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+  }
+
+  // The single heavy server render: compose with the final offsets, then download.
+  async function downloadResult() {
+    if (!session) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/compose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, assignments: buildAssignments(assign, offsets) }),
+      });
+      if (!r.ok) throw new Error(friendlyError((await r.json()).detail || "compose failed"));
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "monkemasked.png";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(friendlyError(err.message));
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function reset() {
@@ -404,7 +413,9 @@ export default function Home() {
     setOffsets({});
     setSelectedFace(null);
     setSelectedMonke(null);
-    setResultUrl(null);
+    setLayout(null);
+    setDispW(0);
+    setDownloading(false);
     setError(null);
     setDragTarget(null);
     setPeople([]);
@@ -631,31 +642,66 @@ export default function Home() {
         </section>
       )}
 
-      {/* Step 3 */}
-      {resultUrl && (
+      {/* Step 3 — live preview: monkes are overlaid in the browser and moved/resized
+          instantly; the server only renders once, on Download. */}
+      {layout && session && (
         <section style={S.card} className="fade-up">
           <h2 style={S.h2}>
-            <span style={S.step}>3</span> 🎉 Result
+            <span style={S.step}>3</span> 🎉 Result — drag a monke to move it
           </h2>
-          <img
-            ref={resultImgRef}
-            src={resultUrl}
-            alt="result"
-            style={{
-              ...S.result,
-              cursor: dragTarget !== null ? "move" : "default",
-              userSelect: "none",
-            }}
-            draggable={false}
-            onMouseDown={onResultMouseDown}
-          />
+
+          <div style={{ position: "relative", width: "100%", lineHeight: 0, userSelect: "none" }}>
+            <img
+              ref={previewImgRef}
+              src={`${API}/api/photo?session=${session}`}
+              alt="your photo"
+              style={{ ...S.result, display: "block" }}
+              draggable={false}
+              onLoad={(e) => setDispW(e.currentTarget.clientWidth)}
+            />
+            {(() => {
+              const S0 = dispW ? dispW / layout.image.w : 0; // display px per image px
+              if (!S0) return null;
+              return [...layout.items]
+                .sort((a, b) => a.z - b.z)
+                .map((it) => {
+                  const off = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1 };
+                  const cx = (it.cx + off.dx) * S0;
+                  const cy = (it.cy + off.dy) * S0;
+                  const w = it.w * off.scale * S0;
+                  const h = it.h * off.scale * S0;
+                  const sel = dragTarget === it.face_index;
+                  return (
+                    <img
+                      key={it.face_index}
+                      src={it.monke}
+                      alt={`monke for face ${it.face_index}`}
+                      draggable={false}
+                      onMouseDown={(e) => onMonkeMouseDown(it.face_index, e)}
+                      style={{
+                        position: "absolute",
+                        left: cx,
+                        top: cy,
+                        width: w,
+                        height: h,
+                        transform: `translate(-50%, -50%) rotate(${-it.roll_deg}deg)`,
+                        cursor: "grab",
+                        outline: sel ? `2px dashed ${ui.accent}` : "none",
+                        outlineOffset: 2,
+                      }}
+                    />
+                  );
+                });
+            })()}
+          </div>
 
           <details style={{ marginTop: 16 }} open>
-            <summary style={S.summary}>Adjust a monke (if two overlap or one sits off)</summary>
+            <summary style={S.summary}>Fine-tune a monke</summary>
             <p style={S.label}>
-              Overlapping monkes are separated automatically. To fine-tune, pick a
-              face then <strong>drag it on the image</strong> to move it, or use the
-              arrows (◀▲▼▶) and the <strong>－／＋</strong> buttons to resize.
+              <strong>Drag any monke</strong> on the image to move it (instant), or
+              pick a face below and use the arrows (◀▲▼▶) and <strong>－／＋</strong> to
+              nudge/resize. Changes preview live — nothing is uploaded until you
+              download.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
@@ -665,33 +711,43 @@ export default function Home() {
                     <button
                       style={S.facePick(dragTarget === f.index)}
                       onClick={() => setDragTarget(dragTarget === f.index ? null : f.index)}
-                      title="select, then drag on the image"
+                      title="highlight this monke"
                     >
                       #{f.index} {dragTarget === f.index ? "✋" : ""}
                     </button>
-                    <button style={S.arrow} onClick={() => nudge(f.index, -NUDGE, 0)} disabled={busy}>◀</button>
+                    <button style={S.arrow} onClick={() => nudge(f.index, -NUDGE, 0)}>◀</button>
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <button style={S.arrow} onClick={() => nudge(f.index, 0, -NUDGE)} disabled={busy}>▲</button>
-                      <button style={S.arrow} onClick={() => nudge(f.index, 0, NUDGE)} disabled={busy}>▼</button>
+                      <button style={S.arrow} onClick={() => nudge(f.index, 0, -NUDGE)}>▲</button>
+                      <button style={S.arrow} onClick={() => nudge(f.index, 0, NUDGE)}>▼</button>
                     </div>
-                    <button style={S.arrow} onClick={() => nudge(f.index, NUDGE, 0)} disabled={busy}>▶</button>
+                    <button style={S.arrow} onClick={() => nudge(f.index, NUDGE, 0)}>▶</button>
                     <span style={{ width: 1, height: 26, background: ui.panelBorder, margin: "0 2px" }} />
-                    <button style={S.arrow} onClick={() => resize(f.index, 1 / 1.15)} disabled={busy} title="smaller">－</button>
-                    <button style={S.arrow} onClick={() => resize(f.index, 1.15)} disabled={busy} title="bigger">＋</button>
+                    <button style={S.arrow} onClick={() => resize(f.index, 1 / 1.15)} title="smaller">－</button>
+                    <button style={S.arrow} onClick={() => resize(f.index, 1.15)} title="bigger">＋</button>
+                    {(offsets[f.index]?.dx || offsets[f.index]?.dy || (offsets[f.index]?.scale ?? 1) !== 1) ? (
+                      <button
+                        style={S.arrow}
+                        title="reset this monke"
+                        onClick={() => setOffsets((o) => ({ ...o, [f.index]: { dx: 0, dy: 0, scale: 1 } }))}
+                      >
+                        ↺
+                      </button>
+                    ) : null}
                   </div>
                 ))}
             </div>
-            {dragTarget !== null && (
-              <p style={{ ...S.label, color: ui.accent }}>
-                Dragging face #{dragTarget}. Drag on the image above to move its monke.
-              </p>
-            )}
           </details>
 
           <div style={{ marginTop: 18, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-            <a href={resultUrl} download="monkemasked.png" style={S.download} className="lift">
-              ⬇️ Download
-            </a>
+            <button onClick={downloadResult} disabled={downloading} style={S.download} className="lift">
+              {downloading ? (
+                <>
+                  <span style={S.spinner} /> Rendering…
+                </>
+              ) : (
+                "⬇️ Download"
+              )}
+            </button>
             <button onClick={reset} style={S.ghost}>
               ↺ Start over
             </button>

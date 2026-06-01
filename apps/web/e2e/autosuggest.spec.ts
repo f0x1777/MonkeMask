@@ -63,6 +63,7 @@ test("auto-suggest recognizes a face and fills its monke", async ({ page }, test
   if (await cover.isVisible({ timeout: 3000 }).catch(() => false)) {
     await cover.click();
   }
-  await expect(page.locator('img[alt="result"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('img[alt="your photo"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('img[alt^="monke for face"]').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("a3-result.png"), fullPage: true });
 });
