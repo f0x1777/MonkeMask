@@ -118,8 +118,11 @@ Next.js App Router, one page, three steps in a wizard:
    thumbnails. Click a face, click a monke → assignment shown as an overlay badge.
    Unassigned faces are highlighted. (Stretch: "auto-suggest" button calling a
    future recognition endpoint.)
-3. **Generate & download** → calls `/api/compose`, shows the result, Download
-   button, and a "Start over" that DELETEs the session.
+3. **Generate & download** → calls `/api/compose`, shows the result. Overlapping
+   monkes (close faces) are separated automatically; an "Adjust" panel lets the
+   user nudge any monke (arrow controls → per-face `dx/dy` offset → re-compose).
+   Download button, and a "Start over" that DELETEs the session. The session is
+   kept across adjustments and removed on Start over or by the TTL sweep.
 
 Privacy note shown in the UI: "Your photo is processed on the server and deleted
 right after. It is never stored or shared."

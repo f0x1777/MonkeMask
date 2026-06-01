@@ -119,15 +119,20 @@ async def compose(payload: dict):
     monkes_dir = store.path(sid) / "monkes"
 
     pairs = []
+    offsets = []
     for a in payload.get("assignments", []):
         region = by_index.get(a["face_index"])
         monke = monkes_dir / a["monke_id"]
         if region is None or not monke.exists():
             raise HTTPException(400, f"bad assignment: {a}")
         pairs.append((region, monke))
+        offsets.append((float(a.get("dx", 0)), float(a.get("dy", 0))))
 
-    png = service.compose(store.path(sid) / "photo", pairs)
-    store.delete(sid)  # processed -> delete immediately (privacy)
+    png = service.compose(store.path(sid) / "photo", pairs, offsets=offsets)
+    # Keep the session so the user can nudge a monke and re-compose; it is deleted
+    # explicitly via DELETE /api/session (the UI's "Start over") and by the TTL
+    # sweep. Opportunistically sweep expired sessions on every compose.
+    store.sweep()
     return Response(content=png, media_type="image/png")
 
 

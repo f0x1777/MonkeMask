@@ -7,11 +7,14 @@ const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 type Face = { index: number; x: number; y: number; w: number; h: number; thumb: string };
 type Monke = { id: string; thumb: string };
 
+const NUDGE = 30; // px per nudge, in original-image pixels
+
 export default function Home() {
   const [session, setSession] = useState<string | null>(null);
   const [faces, setFaces] = useState<Face[]>([]);
   const [monkes, setMonkes] = useState<Monke[]>([]);
   const [assign, setAssign] = useState<Record<number, string>>({}); // faceIndex -> monkeId
+  const [offsets, setOffsets] = useState<Record<number, { dx: number; dy: number }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,19 +79,7 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const assignments = Object.entries(assign).map(([fi, mid]) => ({
-        face_index: Number(fi),
-        monke_id: mid,
-      }));
-      const r = await fetch(`${API}/api/compose`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, assignments }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
-      const blob = await r.blob();
-      setResultUrl(URL.createObjectURL(blob));
-      setSession(null); // server deleted the session after compose
+      await recompose(session);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -96,11 +87,60 @@ export default function Home() {
     }
   }
 
-  function reset() {
+  async function recompose(sid: string) {
+    const assignments = Object.entries(assign).map(([fi, mid]) => {
+      const o = offsets[Number(fi)] || { dx: 0, dy: 0 };
+      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy };
+    });
+    const r = await fetch(`${API}/api/compose`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: sid, assignments }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
+    setResultUrl(URL.createObjectURL(await r.blob()));
+  }
+
+  async function nudge(faceIndex: number, dx: number, dy: number) {
+    if (!session) return;
+    const cur = offsets[faceIndex] || { dx: 0, dy: 0 };
+    const next = { ...offsets, [faceIndex]: { dx: cur.dx + dx, dy: cur.dy + dy } };
+    setOffsets(next);
+    setBusy(true);
+    setError(null);
+    try {
+      // recompose with the updated offset (read from `next`, not stale state)
+      const assignments = Object.entries(assign).map(([fi, mid]) => {
+        const o = next[Number(fi)] || { dx: 0, dy: 0 };
+        return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy };
+      });
+      const r = await fetch(`${API}/api/compose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, assignments }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "compose failed");
+      setResultUrl(URL.createObjectURL(await r.blob()));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reset() {
+    if (session) {
+      try {
+        await fetch(`${API}/api/session/${session}`, { method: "DELETE" });
+      } catch {
+        /* best effort */
+      }
+    }
     setSession(null);
     setFaces([]);
     setMonkes([]);
     setAssign({});
+    setOffsets({});
     setSelectedFace(null);
     setResultUrl(null);
     setError(null);
@@ -204,12 +244,41 @@ export default function Home() {
         </section>
       )}
 
-      {/* Step 3: result */}
+      {/* Step 3: result + manual adjust */}
       {resultUrl && (
         <section style={card}>
           <h2 style={{ marginTop: 0 }}>Done!</h2>
           <img src={resultUrl} alt="result" style={{ maxWidth: "100%", borderRadius: 8 }} />
-          <div style={{ marginTop: 12 }}>
+
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+              Adjust a monke (if two overlap or one sits off)
+            </summary>
+            <p style={{ opacity: 0.8, fontSize: 14 }}>
+              Monkes that overlap are separated automatically. Use the arrows to
+              nudge any one by hand; the image updates each time.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+              {faces
+                .filter((f) => assign[f.index])
+                .map((f) => (
+                  <div
+                    key={f.index}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <strong>#{f.index}</strong>
+                    <button onClick={() => nudge(f.index, -NUDGE, 0)} disabled={busy}>◀</button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <button onClick={() => nudge(f.index, 0, -NUDGE)} disabled={busy}>▲</button>
+                      <button onClick={() => nudge(f.index, 0, NUDGE)} disabled={busy}>▼</button>
+                    </div>
+                    <button onClick={() => nudge(f.index, NUDGE, 0)} disabled={busy}>▶</button>
+                  </div>
+                ))}
+            </div>
+          </details>
+
+          <div style={{ marginTop: 14 }}>
             <a
               href={resultUrl}
               download="monkemasked.png"

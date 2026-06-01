@@ -59,3 +59,16 @@ def test_compose_covers_assigned_face_only(tmp_path):
     arr = np.array(Image.open(__import__("io").BytesIO(png)).convert("RGB"))
     assert arr[60, 60, 1] > 100  # covered face center is green
     assert arr[220, 220, 1] < 80  # uncovered face stays dark
+
+
+def test_compose_applies_manual_offset(tmp_path):
+    # A single face (no auto-overlap nudge); a manual offset shifts the monke.
+    photo = _save_photo(tmp_path)
+    green = _save_monke(tmp_path, "g.png", [0, 255, 0])
+    face = _region(40, 40, 40)  # head-box center ~ (60,60), monke ~80x80
+    base = service.placement_for(face, Image.open(green))
+    png = service.compose(photo, [(face, green)], offsets=[(80.0, 0.0)])
+    arr = np.array(Image.open(__import__("io").BytesIO(png)).convert("RGB"))
+    # monke center moved +80px in x -> green now present well to the right of base
+    shifted_x = int(base.cx + 80)
+    assert arr[int(base.cy), shifted_x, 1] > 100

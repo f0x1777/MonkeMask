@@ -58,17 +58,25 @@ def placement_for(region, monke: Image.Image, *, margin: float = 1.0,
 
 
 def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
-            rotate: bool = True) -> bytes:
+            rotate: bool = True, offsets=None) -> bytes:
     """``pairs`` is a list of (FaceRegion, monke_path). Returns PNG bytes.
 
-    Overlapping monkes (close faces) are nudged apart. Faces not present in
-    ``pairs`` are left uncovered (the UI warns the user)."""
+    Overlapping monkes (close faces) are nudged apart automatically. ``offsets`` is
+    an optional list of (dx, dy) in original-image pixels, one per pair, applied
+    AFTER the auto layout — this is how the web lets a user drag a monke by hand to
+    override the automatic placement. Faces not present in ``pairs`` are left
+    uncovered (the UI warns the user)."""
     canvas = load_image(photo_path).convert("RGBA")
     monkes = [ensure_transparent(load_image(mp)) for _, mp in pairs]
     placements = [placement_for(r, m, margin=margin, rotate=rotate)
                   for (r, _), m in zip(pairs, monkes)]
     faces = [(r.x, r.y, r.w, r.h) for r, _ in pairs]
     placements = resolve_overlaps(placements, faces)
+    if offsets:
+        placements = [
+            Placement(p.cx + dx, p.cy + dy, p.w, p.h, p.roll_deg)
+            for p, (dx, dy) in zip(placements, offsets)
+        ]
     for monke, placement in zip(monkes, placements):
         canvas = composite(canvas, monke, placement)
     buf = io.BytesIO()

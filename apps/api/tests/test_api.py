@@ -73,8 +73,26 @@ def test_full_flow_detect_monkes_compose(client):
     assert arr[60, 60, 1] > 100  # face 0 covered with green monke
     assert arr[220, 220, 1] < 80  # face 1 left uncovered
 
-    # session deleted after compose
+    # session is kept after compose so the user can adjust and re-compose
+    assert client.app.state.sessions.exists(sid)
+    # ...and explicit "Start over" deletes it
+    assert client.delete(f"/api/session/{sid}").status_code == 204
     assert not client.app.state.sessions.exists(sid)
+
+
+def test_recompose_with_offset_keeps_session(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    mr = client.post(
+        "/api/monkes",
+        data={"session": sid},
+        files=[("files", ("g.png", _monke_bytes([0, 255, 0]), "image/png"))],
+    )
+    mid = mr.json()["monkes"][0]["id"]
+    body = {"session": sid, "assignments": [{"face_index": 0, "monke_id": mid, "dx": 40, "dy": 0}]}
+    assert client.post("/api/compose", json=body).status_code == 200
+    # second compose on the same session still works (adjust-and-regenerate)
+    assert client.post("/api/compose", json=body).status_code == 200
 
 
 def test_unsupported_upload_is_400(client):
