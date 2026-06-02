@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 import { MonkeAnonymizer } from "../../MonkeAnonymizer";
 import { ui } from "../../theme";
+import { AdminPanel } from "./AdminPanel";
 
 // The ambassador dashboard = the full MonkeMask anonymizer, signed-in, with a header
 // showing the session + a sign-out. Phase 2 layers persistence (save roster, library
@@ -59,6 +60,7 @@ export function DashboardClient({
           Sign out
         </button>
       </header>
+      {(role === "super_admin" || role === "global_admin") && <AdminPanel role={role} />}
       <MonkeAnonymizer />
     </div>
   );
