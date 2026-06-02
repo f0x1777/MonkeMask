@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { chapterLabel } from "../../../lib/v2/chapters";
 import { useVault } from "../../../lib/v2/useVault";
 import { ui } from "../../theme";
 
@@ -77,7 +78,7 @@ export function RosterBar({ country }: { country: string | null }) {
 
   return (
     <div style={bar}>
-      <strong style={{ color: ui.accent }}>Roster {country ?? ""}</strong>
+      <strong style={{ color: ui.accent }}>Roster {chapterLabel(country)}</strong>
       {vault.locked ? (
         <>
           <span style={{ color: ui.textDim, fontSize: 14 }}>Locked — unlock to load known faces.</span>

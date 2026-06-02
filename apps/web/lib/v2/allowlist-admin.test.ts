@@ -26,6 +26,20 @@ describe("validateNewEntry (super_admin onboarding)", () => {
     });
   });
 
+  it("rejects an ambassador with a country that isn't a known chapter", () => {
+    expect(validateNewEntry({ wallet_pubkey: WALLET, role: "ambassador", country: "ZZ" })).toEqual({
+      ok: false,
+      error: "invalid_chapter",
+    });
+  });
+
+  it("accepts a multi-city chapter code", () => {
+    expect(validateNewEntry({ wallet_pubkey: WALLET, role: "ambassador", country: "us-ny" })).toEqual({
+      ok: true,
+      value: { wallet_pubkey: WALLET, role: "ambassador", country: "US-NY" },
+    });
+  });
+
   it("rejects creating another super_admin via the API", () => {
     expect(validateNewEntry({ wallet_pubkey: WALLET, role: "super_admin" })).toEqual({
       ok: false,

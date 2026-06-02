@@ -2,6 +2,8 @@
 // super_admin can add global_admin and ambassador roles (not another super_admin via
 // the API — that stays a manual seed for safety).
 
+import { isChapter } from "./chapters";
+
 export type NewEntry = {
   wallet_pubkey: string;
   role: "global_admin" | "ambassador";
@@ -21,7 +23,10 @@ export function validateNewEntry(input: {
 
   if (!SOLANA_PUBKEY.test(wallet)) return { ok: false, error: "invalid_wallet" };
   if (role !== "global_admin" && role !== "ambassador") return { ok: false, error: "invalid_role" };
-  if (role === "ambassador" && !country) return { ok: false, error: "country_required" };
+  if (role === "ambassador") {
+    if (!country) return { ok: false, error: "country_required" };
+    if (!isChapter(country)) return { ok: false, error: "invalid_chapter" };
+  }
 
   return {
     ok: true,

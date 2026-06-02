@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CHAPTERS, chapterLabel } from "../../../lib/v2/chapters";
 import { ui } from "../../theme";
 
 type Entry = {
@@ -15,7 +16,8 @@ type RosterStat = { country: string; record_count: number | null };
 const ERRORS: Record<string, string> = {
   invalid_wallet: "That doesn't look like a Solana wallet address.",
   invalid_role: "Pick Global Admin or Local Ambassador.",
-  country_required: "Local Ambassadors need a country code (e.g. AR).",
+  country_required: "Local Ambassadors need a chapter.",
+  invalid_chapter: "Pick a chapter from the list.",
   already_exists: "That wallet is already on the allowlist.",
   insert_failed: "Couldn't add the wallet. Try again.",
   forbidden: "Only a super admin can do this.",
@@ -135,12 +137,14 @@ export function AdminPanel({ role }: { role: string }) {
                 <option value="global_admin">Global Admin</option>
               </select>
               {newRole === "ambassador" && (
-                <input
-                  style={{ ...input, width: 90 }}
-                  placeholder="Country"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                />
+                <select style={input} value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <option value="">— chapter —</option>
+                  {CHAPTERS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.label}
+                    </option>
+                  ))}
+                </select>
               )}
               <button
                 onClick={add}
@@ -172,7 +176,7 @@ export function AdminPanel({ role }: { role: string }) {
                 >
                   <span style={{ fontFamily: "monospace" }}>{short(e.wallet_pubkey)}</span>
                   <span style={{ color: ui.accent }}>{e.role}</span>
-                  {e.country && <span style={{ color: ui.textDim }}>{e.country}</span>}
+                  {e.country && <span style={{ color: ui.textDim }}>{chapterLabel(e.country)}</span>}
                 </div>
               ))}
             </div>

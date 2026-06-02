@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
+import { chapterLabel } from "../../../lib/v2/chapters";
 import { MonkeAnonymizer } from "../../MonkeAnonymizer";
 import { ui } from "../../theme";
 import { AdminPanel } from "./AdminPanel";
@@ -45,7 +46,7 @@ export function DashboardClient({
         <span style={{ color: ui.textDim }}>Local Ambassador</span>
         <span style={{ marginLeft: "auto", color: ui.textDim }}>
           {role}
-          {country ? ` · ${country}` : ""} · {wallet.slice(0, 4)}…{wallet.slice(-4)}
+          {country ? ` · ${chapterLabel(country)}` : ""} · {wallet.slice(0, 4)}…{wallet.slice(-4)}
         </span>
         <button
           onClick={signOut}
