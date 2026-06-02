@@ -76,6 +76,36 @@ def test_compose_applies_manual_offset(tmp_path):
     assert arr[int(base.cy), shifted_x, 1] > 100
 
 
+class FixedEmbedder:
+    """Embeds each region to a unit vector keyed by the region's x (deterministic)."""
+
+    def embed(self, image, region):
+        v = np.zeros(512, dtype=float)
+        v[region.x % 512] = 1.0
+        return v
+
+
+def test_embed_regions_returns_one_embedding_per_face(tmp_path):
+    photo = _save_photo(tmp_path)
+    regions = [_region(20, 20, 40), _region(120, 60, 40)]
+    out = service.embed_regions(photo, regions, FixedEmbedder())
+    assert [r["face_index"] for r in out] == [0, 1]
+    assert len(out[0]["embedding"]) == 512
+    assert out[0]["embedding"][20] == 1.0  # keyed by x=20
+    assert out[1]["embedding"][120] == 1.0  # keyed by x=120
+
+
+def test_embed_regions_tolerates_embed_failure(tmp_path):
+    photo = _save_photo(tmp_path)
+
+    class Boom:
+        def embed(self, image, region):
+            raise RuntimeError("no face")
+
+    out = service.embed_regions(photo, [_region(20, 20, 40)], Boom())
+    assert out == [{"face_index": 0, "embedding": None}]
+
+
 def test_compose_applies_manual_rotation(tmp_path):
     # An asymmetric monke: green top half, red bottom half, fully opaque (alpha tier,
     # so it passes through background removal unchanged). A 180° rotation swaps them.
