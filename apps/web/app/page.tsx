@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ui } from "./theme";
+import {
+  dist,
+  rotFromDrag,
+  scaleFromDrag,
+  screenAngleDeg,
+} from "../lib/transform-gestures";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 const NUDGE = 30; // px per nudge, in original-image pixels
@@ -284,6 +290,74 @@ export default function Home() {
     window.addEventListener("mouseup", onUp);
   }
 
+  // Center of a placed monke in viewport (screen) coordinates. Used as the pivot
+  // for the resize/rotate gestures. The center doesn't move during those gestures,
+  // so it's computed once from the offset captured at gesture start.
+  function monkeCenterScreen(it: LayoutItem, start: { dx: number; dy: number }) {
+    const img = previewImgRef.current;
+    if (!img || !layout || !dispW) return null;
+    const rect = img.getBoundingClientRect();
+    const S0 = dispW / layout.image.w; // display px per image px
+    return {
+      x: rect.left + (it.cx + start.dx) * S0,
+      y: rect.top + (it.cy + start.dy) * S0,
+    };
+  }
+
+  // Drag the corner handle to resize: scale tracks the pointer's distance from
+  // the monke center, relative to where the drag began. Instant + local.
+  function onMonkeResizeDown(it: LayoutItem, e: React.MouseEvent) {
+    if (!layout || !dispW) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragTarget(it.face_index);
+    const start = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1, rot: 0 };
+    const center = monkeCenterScreen(it, start);
+    if (!center) return;
+    const startDist = dist(e.clientX - center.x, e.clientY - center.y);
+
+    const onMove = (ev: MouseEvent) => {
+      const d = dist(ev.clientX - center.x, ev.clientY - center.y);
+      setOffsets((o) => ({
+        ...o,
+        [it.face_index]: { ...start, scale: scaleFromDrag(start.scale, startDist, d) },
+      }));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  // Drag the top handle to rotate: the handle stays locked under the pointer as
+  // it sweeps around the monke center. Instant + local.
+  function onMonkeRotateDown(it: LayoutItem, e: React.MouseEvent) {
+    if (!layout || !dispW) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragTarget(it.face_index);
+    const start = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1, rot: 0 };
+    const center = monkeCenterScreen(it, start);
+    if (!center) return;
+    const startAngle = screenAngleDeg(e.clientX - center.x, e.clientY - center.y);
+
+    const onMove = (ev: MouseEvent) => {
+      const a = screenAngleDeg(ev.clientX - center.x, ev.clientY - center.y);
+      setOffsets((o) => ({
+        ...o,
+        [it.face_index]: { ...start, rot: rotFromDrag(start.rot, startAngle, a) },
+      }));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   // The single heavy server render: compose with the final offsets, then download.
   async function downloadResult() {
     if (!session) return;
@@ -482,7 +556,7 @@ export default function Home() {
       {layout && session && (
         <section style={S.card} className="fade-up">
           <h2 style={S.h2}>
-            <span style={S.step}>3</span> 🎉 Result — drag a monke to move it
+            <span style={S.step}>3</span> 🎉 Result — drag to move, grab a handle to resize/rotate
           </h2>
 
           <div style={{ position: "relative", width: "100%", lineHeight: 0, userSelect: "none" }}>
@@ -507,11 +581,8 @@ export default function Home() {
                   const h = it.h * off.scale * S0;
                   const sel = dragTarget === it.face_index;
                   return (
-                    <img
+                    <div
                       key={it.face_index}
-                      src={it.monke}
-                      alt={`monke for face ${it.face_index}`}
-                      draggable={false}
                       onMouseDown={(e) => onMonkeMouseDown(it.face_index, e)}
                       style={{
                         position: "absolute",
@@ -521,10 +592,41 @@ export default function Home() {
                         height: h,
                         transform: `translate(-50%, -50%) rotate(${-(it.roll_deg + off.rot)}deg)`,
                         cursor: "grab",
-                        outline: sel ? `2px dashed ${ui.accent}` : "none",
-                        outlineOffset: 2,
+                        touchAction: "none",
+                        zIndex: sel ? 3 : undefined,
                       }}
-                    />
+                    >
+                      <img
+                        src={it.monke}
+                        alt={`monke for face ${it.face_index}`}
+                        draggable={false}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "block",
+                          outline: sel ? `2px dashed ${ui.accent}` : "none",
+                          outlineOffset: 2,
+                          pointerEvents: "none",
+                        }}
+                      />
+                      {sel && (
+                        <>
+                          {/* rotate: handle floats above the monke on a short stem */}
+                          <span style={S.rotateStem} />
+                          <span
+                            onMouseDown={(e) => onMonkeRotateDown(it, e)}
+                            title="drag to rotate"
+                            style={S.rotateHandle}
+                          />
+                          {/* resize: handle at the bottom-right corner */}
+                          <span
+                            onMouseDown={(e) => onMonkeResizeDown(it, e)}
+                            title="drag to resize"
+                            style={S.resizeHandle}
+                          />
+                        </>
+                      )}
+                    </div>
                   );
                 });
             })()}
@@ -533,10 +635,12 @@ export default function Home() {
           <details style={{ marginTop: 16 }} open>
             <summary style={S.summary}>Fine-tune a monke</summary>
             <p style={S.label}>
-              <strong>Drag any monke</strong> on the image to move it (instant), or
-              pick a face below and use the arrows (◀▲▼▶), <strong>－／＋</strong> to
-              resize, and <strong>⟲／⟳</strong> to rotate. Changes preview live —
-              nothing is uploaded until you download.
+              <strong>Drag any monke</strong> on the image to move it. Click one to
+              select it, then drag the <strong>top dot to rotate</strong> or the{" "}
+              <strong>corner box to resize</strong> — just like a graphics editor.
+              You can also pick a face below and use the arrows (◀▲▼▶),{" "}
+              <strong>－／＋</strong> to resize, and <strong>⟲／⟳</strong> to rotate.
+              Changes preview live — nothing is uploaded until you download.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               {faces
@@ -880,6 +984,44 @@ const S: Record<string, any> = {
     cursor: "pointer",
   },
   result: { maxWidth: "100%", borderRadius: 12, display: "block" },
+  rotateHandle: {
+    position: "absolute",
+    left: "50%",
+    top: -28,
+    width: 18,
+    height: 18,
+    marginLeft: -9,
+    borderRadius: "50%",
+    background: ui.accent,
+    border: "2px solid #fff",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+    cursor: "grab",
+    zIndex: 2,
+  },
+  rotateStem: {
+    position: "absolute",
+    left: "50%",
+    top: -12,
+    width: 2,
+    height: 12,
+    marginLeft: -1,
+    background: ui.accent,
+    pointerEvents: "none",
+    zIndex: 1,
+  },
+  resizeHandle: {
+    position: "absolute",
+    right: -9,
+    bottom: -9,
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    background: ui.accent,
+    border: "2px solid #fff",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+    cursor: "nwse-resize",
+    zIndex: 2,
+  },
   summary: { cursor: "pointer", fontWeight: 600, color: ui.ivory },
   nudgeRow: (active: boolean) => ({
     display: "flex",
