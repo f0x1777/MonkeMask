@@ -11,8 +11,15 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.38",
+    "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.106.2",
     "@vercel/analytics": "^2.0.1",
     "bs58": "^6.0.0",
+    "jose": "^5.10.0",
     "next": "15.5.18",
     "react": "19.0.0",
     "react-dom": "19.0.0",
@@ -20,8 +27,12 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",
+    "jsdom": "^29.1.1",
     "typescript": "5.7.3",
     "vitest": "^2.1.9"
   },
