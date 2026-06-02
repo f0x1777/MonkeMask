@@ -1,7 +1,7 @@
-# 0001. Vault and Trust Models: ZK Personal Vault vs. Server-Readable Global Match Index
+# 0001. Vault and Trust Models: Closed Allowlist + Envelope-Encrypted Country/Global Keys + Client-Side Matching
 
 **Date**: 2026-06-01
-**Status**: Proposed
+**Status**: Accepted (revised 2026-06-01 — supersedes the Proposed draft)
 
 ---
 
@@ -10,136 +10,127 @@
 MonkeMask is evolving from a stateless ephemeral tool into a platform with two
 distinct persistence capabilities:
 
-**A — Personal vault.** A logged-in user stores their own monke library and
-named face-to-monke associations across sessions. All data is attributed to a
-single user, encrypted client-side, and read back only by that user.
+**A — Per-country roster.** A Local Ambassador builds and maintains a database
+of faces and their SMB associations for their own country. All data is
+country-scoped, encrypted client-side, and readable only by ambassadors of
+that country.
 
-**B — Global match index.** At community events, opted-in members are
-automatically recognised in group photos and their monke is placed without
-manual pairing. This requires a similarity search over embeddings from
-potentially hundreds of members simultaneously.
+**B — Promoted global registry.** At multi-country events, a `super_admin` can
+promote selected country data to a global registry accessible only to
+`global_admin` wallets. Global admins use this for cross-country event coverage.
 
-These two capabilities have irreconcilable privacy requirements if we attempt
-to implement them under a single model. The decision being recorded here is:
-**how to handle encryption and trust for each**, and **why the same model
-cannot serve both**.
+The original (Proposed) draft of this ADR described two separate trust models:
+a zero-knowledge personal vault (per-user DEK wrapped under per-user KEK) and
+a server-readable global match index using pgvector for ANN search. The key
+architectural tension was: server-side ANN search requires plaintext embeddings
+in the database, which cannot be zero-knowledge.
 
-### The zero-knowledge option (client-side encryption, no server reads)
+The operator has since made several decisions that reshape the model materially:
 
-For feature A, a wallet-signature-derived encryption key (KEK = HKDF of the
-user's ed25519 signature over a fixed message) wraps a random DEK. The DEK
-encrypts the vault JSON. Only the user — possessing the wallet — can reproduce
-the KEK and unlock the vault. The server stores only opaque ciphertext. This
-is genuinely zero-knowledge from the server's perspective.
+1. **Closed access.** The platform is gated to a fixed allowlist of ~20-30
+   Solana wallets (Local Ambassadors). This is not open signup, not holder-
+   gating, not a public community registry. The access group is known,
+   vetted, and small.
 
-For feature B, zero-knowledge would mean: each member's face embedding is
-encrypted under their own KEK and stored as ciphertext on the server. At
-event-processing time, when a new face arrives, we need to compare it against
-all enrolled members' embeddings. With each member's embedding encrypted under
-their own key, the server cannot perform this comparison at all. The only
-options would be:
+2. **The closed access group resolves the pgvector trade-off.** With a small,
+   closed access group, the per-country and global embedding sets are small
+   (hundreds to a few thousand 512-dim float32 vectors = a few MB). A linear
+   cosine-similarity scan in the browser over this dataset takes under 10ms
+   on modern hardware. There is no performance justification for server-side
+   ANN search, and therefore no reason to store plaintext embeddings in Postgres.
+   The "plaintext embeddings in pgvector" risk documented in the prior draft is
+   **eliminated** in this revision.
 
-1. Decrypt all enrolled members' embeddings server-side → not ZK.
-2. Route the query to each member's device for local comparison → requires
-   all members to be online simultaneously, adds P2P infrastructure, adds
-   latency proportional to community size, is architecturally fragile.
-3. Use cryptographic techniques that allow matching on ciphertext (homomorphic
-   encryption, Private Set Intersection) → prohibitive compute cost at
-   community scale in 2026.
-4. Use a Trusted Execution Environment (TEE) where embeddings are decrypted
-   inside a hardware-attested enclave → requires dedicated server hardware
-   not available on Railway, adds attestation chain complexity.
+3. **Country-scoped encryption replaces per-user vaults.** Rather than one vault
+   per user (which requires individual key management for every ambassador
+   independently and does not support the "any ambassador in a country can read
+   their country's data" requirement), the model uses per-country symmetric keys
+   (CK) envelope-wrapped to each ambassador of that country. This is simpler:
+   ~20-30 wallet keys total, N country keys (N = number of countries, likely
+   2-5 at launch), and 1 global key. The server holds no plaintext at any layer.
 
-None of these alternatives are viable for v1. Options 3 and 4 are documented
-as future paths (see Alternatives below).
+4. **No formal DPIA gate.** The operator explicitly accepts the biometric data
+   processing risk given the closed, trusted-ambassador access model and
+   community context. The prior draft had a hard DPIA blocker before the global
+   registry launched; this is removed.
 
-### The determinism dependency
+### The determinism dependency (unchanged from prior draft)
 
-The ZK vault design relies on the ed25519 signature over the fixed vault
-derivation message being stable across sessions and devices: same wallet,
-same message → same 64-byte signature → same KEK. RFC 8032 §5.1.6 specifies
-that ed25519 signatures are deterministic (no random nonce). Major browser
-wallets (Phantom, Solflare, Backpack) comply with this. However:
+The entire key derivation chain depends on `wallet.signMessage(message)`
+producing the same 64-byte ed25519 output on every call for the same wallet
+and message. RFC 8032 §5.1.6 specifies deterministic ed25519. Major browser
+wallets (Phantom, Solflare, Backpack) comply. Ledger hardware wallet determinism
+on the Solana app is unconfirmed as of this writing. The implementation
+validates determinism explicitly before any key material is committed (sign
+twice, compare byte-for-byte; block if they differ). This is the first task in
+the implementation plan and is a gate for all subsequent work.
 
-- Ledger hardware wallets may not support `signMessage` on all firmware
-  versions, and determinism on the Solana app has not been confirmed in
-  testing as of this writing.
-- A key-derivation design built on this property must validate it explicitly
-  before committing user data to the vault. A single non-deterministic result
-  means the KEK changes, the DEK cannot be unwrapped, and the vault is
-  permanently inaccessible.
-- The vault design therefore includes a mandatory determinism check on
-  first-use (sign the derivation message twice, compare byte-for-byte) that
-  blocks vault creation if the results differ.
+### The "removed ambassador retains data" accepted risk
 
-### The legal dimension
-
-ArcFace embeddings derived from a face image are biometric data under GDPR
-Art. 9, Illinois BIPA, and Argentina Ley 25.326. Processing them in a
-server-readable index (as required for feature B) is the highest-risk category
-of data processing in this system. This is not a reason to abandon B — the
-community value of automated event coverage is real — but it means B must be:
-
-- Strictly opt-in, with per-person explicit consent.
-- Isolated from the ZK personal vault (a single data model compromise would
-  otherwise put both at risk).
-- Subject to a DPIA before production launch.
-- Designed with deletion as a first-class operation (not an afterthought).
-
-Keeping the two stores separate ensures that the ZK guarantee of the personal
-vault is not weakened by the existence of the server-readable global index.
+CK rotation (generating a new CK, re-wrapping for remaining ambassadors,
+re-encrypting the roster blob) prevents a removed ambassador from accessing
+the country data after removal. However, it cannot recall data already
+decrypted and held in their browser or downloaded during active sessions.
+This is an accepted residual risk, appropriate for a trusted-ambassador model
+where vetting occurs before allowlist addition.
 
 ---
 
 ## Decision
 
-We will implement **two separate stores with two separate trust models**:
+We implement a **single, unified encryption model** for both the per-country
+roster and the global registry:
 
-### Store 1 — Zero-knowledge personal vault
+### Envelope encryption with per-country and per-global symmetric keys
 
-- Scope: personal monke library, named face-to-monke associations, ArcFace
-  embeddings the user has produced for their own contacts.
-- Encryption: client-side, AES-256-GCM, DEK wrapped under KEK derived from
-  wallet signature via HKDF-SHA256.
-- Server knowledge: ciphertext blob + wrapped DEK only. No plaintext, no KEK,
-  no DEK ever reaches the server.
-- Face matching: client-side only. After vault unlock, the browser compares
-  the query embedding against the user's stored association embeddings using
-  cosine similarity.
-- Access control: Postgres RLS restricts all reads to the owning user. Admins
-  have access to a metadata-only view; `ciphertext` and `wrapped_dek` columns
-  are excluded from all admin-accessible views and API endpoints.
-- Trust: the server is explicitly untrusted for vault contents. Even a
-  fully-compromised Supabase instance yields only opaque bytes.
+- **Country Key (CK):** a random 32-byte AES-256-GCM key generated once per
+  country by the `super_admin`. CK encrypts the country's roster JSON blob.
+  CK is envelope-wrapped (AES-256-GCM) to each ambassador's KEK. KEK is derived
+  HKDF-SHA256 from the ambassador's wallet signature over a fixed derivation
+  message.
 
-### Store 2 — Consented global match index
+- **Global Key (GK):** a random 32-byte AES-256-GCM key generated once by the
+  `super_admin`. GK encrypts the global registry blob. GK is envelope-wrapped
+  to each `global_admin`'s KEK.
 
-- Scope: ArcFace embeddings of members who have explicitly opted into the
-  global registry for the purpose of automated event coverage.
-- Encryption: AES-256-GCM with a server-managed key stored in Supabase Vault
-  (envelope-encrypted at the application layer); plaintext pgvector column
-  (`pgv_embedding`) for ANN search; wrapped copy (`wrapped_embedding`) for
-  audit/recovery.
-- Server knowledge: the server can read `pgv_embedding` in plaintext. This
-  is an accepted, disclosed limitation. It is mitigated by access controls
-  (service-role-only access, RLS preventing direct user queries), audit
-  logging on all reads, and the consent model.
-- Face matching: server-side pgvector HNSW approximate nearest-neighbour
-  search at event-processing time.
-- Access control: RLS prevents any user (including admins) from querying
-  this table via the Supabase client. Only the backend service role may read
-  embeddings, and only during event processing.
-- Trust: the server IS trusted for this store. Members who do not trust the
-  platform operator with their biometric data should not enroll in the global
-  registry. This must be stated plainly in the consent dialog.
+- **No per-user personal vaults.** The prior design had personal vaults (per-user
+  DEK + wrapped DEK) that stored individual user's monke libraries and
+  associations. This is replaced by the country-roster model: ambassador
+  associations are stored in their country's encrypted blob. The monke library
+  cache is a non-sensitive metadata table (RLS-restricted to the owning wallet)
+  with no encryption requirement.
+
+### Client-side matching exclusively
+
+All ArcFace cosine-similarity matching happens in the browser after the key
+holder (ambassador or global_admin) decrypts their scope. The server never
+receives a plaintext embedding query, never stores a plaintext embedding, and
+never performs a similarity computation.
+
+This is viable because:
+- The access group is ~20-30 wallets.
+- Per-country embedding sets: at most a few hundred entries per country.
+- Global registry: at most a few hundred to a few thousand entries across all
+  countries.
+- Linear scan over 1,000 × 512-float32 vectors in JavaScript: ~2ms.
+- There is no scale requirement that demands server-side ANN.
+
+### pgvector: installed but unused for v1 matching
+
+The `pgvector` extension is installed on the Supabase project (`monkemask-v2`,
+São Paulo). It is NOT used for matching in v1. The `pgvector` columns that
+appeared in the prior draft's `global_embeddings` table do not exist in this
+design. `pgvector` is preserved as available-but-deferred for potential future
+use (e.g., deduplication tooling, model-migration analytics).
 
 ### Separation guarantee
 
-The two stores are separate Postgres tables with no foreign-key relationship
-between them (beyond the `user_id` join to the `users` table). The application
-layer has no code path that reads from the personal vault and writes to the
-global index, or vice versa. An audit of the backend code must verify this
-before Phase 4 ships.
+The `/` ephemeral flow and the `/v2` platform are separate route groups in the
+same Next.js application. They share no data model, no API routes, and no
+encryption primitives. The ephemeral flow has no dependency on the allowlist,
+wrapped_keys, or encrypted roster tables. This separation ensures the "deleted
+right after" privacy promise of the ephemeral flow is not weakened by the
+existence of the platform layer.
 
 ---
 
@@ -147,136 +138,148 @@ before Phase 4 ships.
 
 ### What becomes easier
 
-- The personal vault achieves genuine zero-knowledge with straightforward
-  crypto (standard HKDF + AES-GCM; no exotic primitives).
-- The global index achieves community-scale ANN search with pgvector (mature,
-  well-understood, already available in Supabase).
-- Legal compliance for the global index is tractable: a consent model over a
-  defined, isolated store is easier to reason about and audit than a hybrid.
-- Feature A (personal vault) can ship independently of B (global registry),
-  with no dependency on the DPIA.
-- The existing ephemeral flow is unchanged; there is no regression risk to the
-  "deleted right after" promise for anonymous users.
+- **No plaintext biometrics in the database.** A compromised Supabase
+  service-role credential, database dump, or Supabase employee with console
+  access sees only opaque AES-GCM ciphertext. This is a materially stronger
+  security posture than the prior draft's accepted "pgvector plaintext" risk.
+- **Simpler key management.** ~20-30 wrapped-key rows total (one per
+  wallet-scope combination), versus hundreds or thousands of per-user vault rows
+  if the platform had open signup. Rotation is tractable: a CK rotation touches
+  a handful of wrapped_keys rows and one roster blob.
+- **No DPIA gate.** The closed access model allows the operator to launch without
+  a formal DPIA sign-off.
+- **Personal vault (ZK per-user DEK model) is removed.** This reduces codebase
+  complexity and eliminates the "lose wallet = lose vault" UX problem that
+  required significant mitigation in the prior design.
+- **Feature A (per-country roster) and Feature B (global registry) ship under
+  the same trust model.** No architectural split between "ZK personal vault"
+  and "server-readable global index."
 
 ### What becomes harder
 
-- Two stores = two code paths for embedding storage and retrieval. More surface
-  area to keep in sync (especially around deletion cascades).
-- The ZK property of the personal vault introduces a permanent user-education
-  burden: "lose your wallet, lose your vault" is a concept most web users have
-  no mental model for. Onboarding UX must be carefully designed.
-- The determinism dependency on wallet implementations is a fragility. If a
-  future wallet update changes `signMessage` behaviour, users of that wallet
-  lose their vaults. The determinism check on setup catches this before data
-  is committed, but it is an ongoing operational concern.
-- Backup purge for the global index (required for right-to-erasure compliance)
-  is operationally non-trivial with Supabase's standard backup approach. A
-  backup strategy that supports selective purge must be in place before B ships.
+- **Key rotation on ambassador removal is a manual super_admin action.** There
+  is no automated rotation on wallet removal today. Until the admin panel is
+  built (Phase 4), the super_admin must perform this operation manually. A
+  removed ambassador retains access until rotation completes.
+- **Country blob is all-or-nothing per-country.** All ambassadors of a country
+  share the same CK and see the same roster. Fine-grained per-record access
+  control within a country is not provided in v1.
+- **Deletion requires re-encryption of the entire roster blob.** Unlike a row
+  deletion in a plaintext table, removing one association requires: decrypt the
+  blob, remove the record, re-encrypt, write back. This is a more involved
+  deletion SLA but is manageable at the expected data sizes.
+- **The determinism dependency remains fragile.** A wallet firmware update that
+  changes `signMessage` behaviour will break all key derivation for affected
+  ambassadors. The determinism check on first use catches this before data is
+  committed, but it is an ongoing operational concern. If an ambassador's wallet
+  becomes non-deterministic after onboarding (firmware update), their CK
+  becomes unrecoverable through that wallet without a super_admin re-wrap using
+  a backup mechanism not yet designed.
 
 ### Risks accepted
 
-- A compromised Supabase service-role credential gives read access to all
-  `pgv_embedding` values in the global index. This is mitigated by access
-  controls and audit logging but not eliminated. Members consent to this risk
-  explicitly.
-- ArcFace embedding inversion (reconstructing an approximate face image from
-  an embedding) is theoretically possible. We accept this risk for v1 on the
-  basis that: (a) current inversion attacks require significant compute and
-  produce low-fidelity outputs; (b) the embedding is never exposed to the
-  enrolling member or any other user; (c) only backend service role can read it.
-  This risk should be re-evaluated if inversion techniques improve materially.
-- The ZK vault provides no protection against a user whose wallet is
-  compromised. Application-layer security ends at the wallet boundary.
+- **A removed ambassador retains any data they already decrypted.** CK rotation
+  prevents future access, but past sessions are not retractable. Acceptable for
+  a vetted-ambassador model.
+- **super_admin wallet compromise is catastrophic.** The super_admin wallet has
+  access to all wrapped keys (or the ability to add new ones), controls the
+  allowlist, and can promote data to the global registry. The super_admin wallet
+  is the highest-value target. Hardware wallet (Ledger) or multi-sig for the
+  super_admin role should be evaluated before Phase 4.
+- **Client-side matching scale ceiling.** The design is optimal for a few hundred
+  entries per scope. If the global registry grows to tens of thousands of entries,
+  the linear scan may become a UX bottleneck (>100ms). At that point, a chunked
+  or indexed approach would be needed. For v1 this is not a concern.
+- **Informal consent for event attendees.** The subjects whose biometric data
+  is most sensitive (event attendees whose faces are in photos) are not
+  necessarily wallet holders and cannot self-service consent in the app. The
+  operator accepts responsibility for the informal consent mechanism (event
+  signage, community norms). The in-app `consent_records` table provides
+  traceability.
 
 ---
 
 ## Alternatives considered
 
-### A1 — Single ZK model for both A and B (federated on-device matching)
+### A1 — Retain the per-user ZK vault model from the prior draft
 
-Each member's embedding is encrypted under their own KEK. At event time, the
-backend sends each detected face crop to each member's registered device for
-local comparison, aggregates responses.
+Each ambassador has their own DEK + wrapped DEK (as in the prior draft). The
+global index uses pgvector with server-readable plaintext embeddings.
 
-**Why rejected:** requires all N members to be online simultaneously during
-event processing (N can be hundreds). Adds P2P coordination infrastructure with
-no existing open-source reference implementation for this use case. Latency is
-O(N) network round-trips. A single offline member means their face is missed.
-Fragile and impractical for live event use. Document as a potential v3 direction
-if the community strongly favours it over the server-readable model.
+**Why rejected:** (a) The personal vault model does not support the
+"any ambassador in a country shares a roster" requirement — each ambassador
+would have a separate vault with separate embeddings, making country-level
+deduplication and sharing impossible without a new sharing mechanism.
+(b) Server-readable pgvector embeddings were an accepted risk in the prior
+draft, but with the closed access model, client-side matching eliminates that
+risk at no cost. (c) Per-user vaults add complexity (N vault rows, N wrapped
+DEKs, vault migration UX) that is unnecessary when the access group is fixed.
 
-### A2 — Homomorphic encryption for similarity search
+### A2 — Single shared symmetric key for everything (no per-country scoping)
 
-Embeddings are stored as HE ciphertexts. The server computes approximate
-nearest-neighbour over HE ciphertexts without decrypting.
+One global CK shared by all ambassadors. Simpler key distribution; any
+ambassador can read all data from all countries.
 
-**Why rejected:** state-of-the-art FHE (CKKS scheme, which supports floating-
-point approximate arithmetic suitable for cosine similarity) adds 3–4 orders of
-magnitude of compute overhead per comparison. A 512-dimension cosine similarity
-that takes ~1 microsecond in plaintext takes ~10 milliseconds with CKKS at
-usable security levels. For 500 enrolled members × N faces per event photo, the
-latency becomes seconds to tens of seconds per event photo. Unacceptable for
-interactive use. Revisit when HE accelerator hardware (e.g., Intel HERACLES,
-Zama Concrete GPU backend) becomes accessible on standard cloud VMs.
+**Why rejected:** this eliminates the country-scoping requirement that is
+explicit in the operator's decisions. Ambassadors should see only their own
+country's data. A single shared key would give every ambassador full read
+access to every other country's roster, which is not acceptable.
 
-### A3 — Trusted Execution Environment (AWS Nitro Enclave / Azure Confidential VM)
+### A3 — Server-side encryption with operator-managed keys (no client-side crypto)
 
-Embeddings are encrypted under an enclave-attested key. Matching runs inside
-the TEE; results are returned without the server operator seeing the inputs.
+Encrypt at rest with Supabase Vault or a KMS key managed by the operator.
+Matching could be server-side.
 
-**Why rejected:** requires dedicated server instances (not available on Railway,
-the current backend host). Adds enclave attestation chain management (rotate
-attestation certificates, verify PCR values on each deploy). Increases deploy
-complexity substantially. This is the most technically sound alternative; it is
-deferred as a Phase 4+ upgrade path if the community demands TEE-grade privacy
-for the global index. The separation of stores in this decision is designed to
-make a future TEE migration of the global index feasible without touching the
-personal vault.
+**Why rejected:** this gives the operator (and anyone with access to the KMS)
+the ability to read all biometric data. The prior draft accepted this for the
+global index but it was explicitly an accepted risk. With the closed access
+model and small dataset, client-side encryption at no practical performance
+cost is strictly better. Server-readable biometrics is not needed and not
+acceptable.
 
-### A4 — No global index; require manual pairing for all event photos
+### A4 — Threshold signatures or multi-party key derivation
 
-Keep the existing manual pairing flow; provide personal vault auto-suggest but
-no community-level matching.
+Require M-of-N ambassador signatures to unwrap a CK (e.g., Shamir Secret
+Sharing). Stronger protection against single-wallet compromise.
 
-**Why rejected:** this does not address the stated goal of "automatic event
-coverage at community scale." The use case (200-person group photo → fully
-masked in one pass) requires matching against a community-wide index. Without
-it, the platform provides incremental improvement for individuals but no step
-change for event organisers.
+**Why deferred:** substantially more complex to implement and UX-unfriendly
+for a tool used at live events (requiring multiple ambassadors to be online
+simultaneously to decrypt). Not needed for v1 given the vetted-ambassador
+trust model. Document as a post-v1 upgrade path if the operator decides
+single-ambassador CK access is too risky.
 
-### A5 — Fully server-readable model for everything (no ZK personal vault)
+### A5 — Retain pgvector for server-side matching alongside client-side encryption
 
-Encrypt vault at rest with server-managed keys; admins can technically decrypt
-if required.
+Store embeddings both encrypted (client-accessible) and in pgvector (server-side
+ANN search). Dual representation, maximum flexibility.
 
-**Why rejected:** this would contradict the platform's core privacy promise.
-A wallet-holding crypto community has high sensitivity to server-side key
-custody. The ZK property is a differentiator and a trust signal. The technical
-cost of implementing it for the personal vault (standard HKDF + AES-GCM) is
-low relative to the trust value it provides. Server-side key custody for
-personal vaults is not acceptable.
+**Why rejected:** the dual representation re-introduces the plaintext biometrics
+risk that the closed-allowlist + client-side design eliminates. There is no
+performance need for server-side ANN at the expected dataset size. The complexity
+cost of maintaining two stores outweighs any benefit.
 
 ---
 
 ## Future upgrade paths
 
-These are explicitly out of scope for v1 but should be considered when
-re-evaluating the trust model:
-
-- **TEE migration for global index (A3):** if Railway or a replacement host
-  offers Nitro Enclaves or TDX VMs, migrating the global index ANN search
-  into a TEE is the highest-value privacy upgrade for B.
-- **Federated matching (A1):** if the community prioritises ZK for B over
-  availability guarantees, federated on-device matching is revisitable when
-  a reliable P2P coordination layer (e.g., a Solana program or a libp2p mesh)
-  is in place.
-- **HE (A2):** revisit when HE accelerator hardware is accessible on standard
-  cloud infrastructure and per-comparison latency drops to sub-millisecond
-  range.
-- **Wallet recovery / social recovery:** if the "lose wallet = lose vault" UX
-  is unacceptable to a significant fraction of users, social recovery (e.g.,
-  Shamir secret sharing with trusted guardians) could provide a recovery path
-  without server-side key escrow. This would require a new ADR.
+- **Multi-sig or threshold custody for CKs:** if the vetted-ambassador model
+  expands or risk tolerance decreases, M-of-N threshold unwrapping (e.g.,
+  SLIP-39 or Shamir) could replace single-wallet CK wrapping.
+- **TEE-based global matching:** if the global registry grows to a size where
+  client-side linear scan is too slow, and server-side ANN is needed, a Trusted
+  Execution Environment (AWS Nitro Enclave, Intel TDX) could host the matching
+  without exposing plaintext embeddings to the operator. The current ciphertext
+  storage format is compatible with this upgrade path.
+- **Federated/P2P matching:** if the community later demands ZK properties even
+  for event matching involving external participants, federated on-device
+  matching (each ambassador's device participates in the match locally) is
+  revisitable. The per-country roster model is compatible: each ambassador's
+  device holds the decrypted country roster and can respond to a match query.
+- **Wallet recovery for ambassadors:** if an ambassador loses their wallet
+  (and therefore cannot re-derive their KEK to unwrap CK), the super_admin can
+  generate a new wrapped_CK entry for the new wallet, but the lost wallet's
+  previous wrapped_CK entry is revoked. A social recovery or hardware backup
+  protocol should be documented in ambassador onboarding.
 
 ---
 
@@ -285,10 +288,7 @@ re-evaluating the trust model:
 - Spec: `docs/specs/member-vault-platform.md`
 - RFC 8032 §5.1.6 (ed25519 determinism): https://www.rfc-editor.org/rfc/rfc8032
 - RFC 5869 (HKDF): https://www.rfc-editor.org/rfc/rfc5869
-- pgvector HNSW: https://github.com/pgvector/pgvector
-- CKKS HE scheme: Cheon et al., "Homomorphic Encryption for Arithmetic of
-  Approximate Numbers", ASIACRYPT 2017
+- WebCrypto AES-GCM + HKDF: https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto
 - ArcFace embedding inversion: Shahreza & Marcel, "Face Reconstruction from
   Deep Facial Embeddings", 2022 (IJCB)
 - Intel TDX confidential VMs: https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html
-- Zama Concrete (TFHE accelerator): https://github.com/zama-ai/concrete
