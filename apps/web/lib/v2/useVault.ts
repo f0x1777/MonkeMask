@@ -9,6 +9,26 @@ import { deriveEncKeypair, openSealedSecret, sealSecretToAdmin } from "./global"
 import { emptyRoster, findMatch, type Roster, type RosterEntry } from "./roster";
 import { MEMBER_ENC_IDENTITY_MESSAGE } from "./siws";
 
+// Seal the CK to every entitled holder of this chapter who is registered but ungranted
+// (chapter mates + global_admin recovery holders). Idempotent: only seals to the pending
+// set the server returns. Returns how many were granted.
+async function sealCkToPending(ckBytes: Uint8Array): Promise<number> {
+  const pendingList: { wallet_pubkey: string; enc_public_key: string }[] =
+    (await fetch("/api/v2/chapter/grants").then((r) => r.json())).pending ?? [];
+  const grants = pendingList.map((p) => ({
+    wallet_pubkey: p.wallet_pubkey,
+    sealed_key: sealSecretToAdmin(ckBytes, p.enc_public_key),
+  }));
+  if (grants.length === 0) return 0;
+  const r = await fetch("/api/v2/chapter/grants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ grants }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "grant_failed");
+  return (await r.json()).granted ?? grants.length;
+}
+
 export type VaultApi = {
   unlock: () => Promise<void>;
   saveEntry: (embedding: number[], monke: string) => Promise<void>;
@@ -91,6 +111,9 @@ export function useVault(): VaultApi {
         const key = await importAesKey(bytes);
         setCk(key);
         await loadRoster(key);
+        // Reconcile: cover any newly-entitled holders (new chapter mates / global-admin
+        // recovery holders) that registered after this CK was first distributed.
+        void sealCkToPending(bytes).catch(() => {});
       } else if (!initialised) {
         await registerIdentity(enc.publicKey);
         const bytes = generateKeyBytes();
@@ -104,6 +127,9 @@ export function useVault(): VaultApi {
         ckBytesRef.current = bytes;
         setCk(await importAesKey(bytes));
         setRoster(emptyRoster());
+        // Auto-seal the CK to recovery holders (global admins) + any chapter mates, so
+        // the chapter is never single-holder / unrecoverable. Best-effort.
+        void sealCkToPending(bytes).catch(() => {});
       } else {
         await registerIdentity(enc.publicKey);
         setPending(true);
@@ -155,20 +181,7 @@ export function useVault(): VaultApi {
   const enrollPending = useCallback(async (): Promise<number> => {
     const bytes = ckBytesRef.current;
     if (!bytes) throw new Error("locked");
-    const pendingList: { wallet_pubkey: string; enc_public_key: string }[] =
-      (await fetch("/api/v2/chapter/grants").then((r) => r.json())).pending ?? [];
-    const grants = pendingList.map((p) => ({
-      wallet_pubkey: p.wallet_pubkey,
-      sealed_key: sealSecretToAdmin(bytes, p.enc_public_key),
-    }));
-    if (grants.length === 0) return 0;
-    const r = await fetch("/api/v2/chapter/grants", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ grants }),
-    });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "grant_failed");
-    return (await r.json()).granted ?? grants.length;
+    return sealCkToPending(bytes);
   }, []);
 
   const roster = rosterRef.current;

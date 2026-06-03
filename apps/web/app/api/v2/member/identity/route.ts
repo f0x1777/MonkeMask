@@ -22,7 +22,9 @@ function isValidEncPubKey(key: unknown): key is string {
 }
 
 export async function POST(req: Request) {
-  const s = await requireRole(["ambassador", "country_ambassador"]);
+  // global_admin registers a member identity too, so chapter CKs can be sealed to them
+  // as recovery (break-glass) holders.
+  const s = await requireRole(["ambassador", "country_ambassador", "global_admin"]);
   if (!s) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   if (!isValidEncPubKey(body.enc_public_key)) {

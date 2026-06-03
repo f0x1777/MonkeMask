@@ -1,8 +1,12 @@
 "use client";
 
+import { useWallet } from "@solana/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { b64encode } from "../../../lib/v2/bytes";
 import { chapterLabel } from "../../../lib/v2/chapters";
+import { deriveEncKeypair } from "../../../lib/v2/global";
+import { MEMBER_ENC_IDENTITY_MESSAGE } from "../../../lib/v2/siws";
 import { useGlobalVault } from "../../../lib/v2/useGlobalVault";
 import { ui } from "../../theme";
 
@@ -35,6 +39,7 @@ const btn: React.CSSProperties = {
 export function GlobalPanel({ role }: { role: string }) {
   const isGlobalAdmin = role === "global_admin";
   const vault = useGlobalVault();
+  const { signMessage } = useWallet();
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -93,6 +98,32 @@ export function GlobalPanel({ role }: { role: string }) {
     }
   }
 
+  // Register a member identity so chapter ambassadors can seal their CK to you as a
+  // recovery (break-glass) holder. You can already read every chapter's associations via
+  // the global registry, so this adds no exposure — it just lets you recover a chapter if
+  // its ambassadors lose their wallets.
+  async function enableRecovery() {
+    setErr(null);
+    setNote(null);
+    if (!signMessage) {
+      setErr("Connect your wallet first.");
+      return;
+    }
+    try {
+      const sig = await signMessage(new TextEncoder().encode(MEMBER_ENC_IDENTITY_MESSAGE));
+      const enc = await deriveEncKeypair(sig);
+      const r = await fetch("/api/v2/member/identity", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enc_public_key: b64encode(enc.publicKey) }),
+      });
+      if (!r.ok) throw new Error("register_failed");
+      setNote("Recovery enabled — chapters will seal their key to you when their ambassadors next unlock.");
+    } catch {
+      setErr("Couldn't enable recovery.");
+    }
+  }
+
   return (
     <section style={{ maxWidth: 760, margin: "0 auto", padding: "0 20px 8px", color: ui.ivory }}>
       <h2 style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>Global registry</h2>
@@ -139,6 +170,14 @@ export function GlobalPanel({ role }: { role: string }) {
                 </button>
               </>
             )}
+            <button
+              onClick={enableRecovery}
+              disabled={!vault.canSign}
+              style={{ ...btn, background: "transparent", color: ui.ivory, border: `1px solid ${ui.panelBorder}` }}
+              title="register as a recovery holder for chapter keys"
+            >
+              🛟 Enable chapter recovery
+            </button>
           </div>
         )}
         {note && <p style={{ color: ui.accent, margin: "8px 0 0" }}>{note}</p>}

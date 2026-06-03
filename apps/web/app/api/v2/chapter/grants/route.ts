@@ -25,15 +25,28 @@ function scopeFor(country: string) {
   return `chapter:${country}`;
 }
 
-// Wallets that are active ambassadors of this chapter.
-async function chapterAmbassadors(db: SupabaseClient, country: string): Promise<Set<string>> {
+// Wallets entitled to hold this chapter's CK: the chapter's own active ambassadors PLUS
+// active global_admins (the recovery / break-glass tier — they can already read every
+// chapter's associations via the global registry, so holding the CK adds no exposure).
+async function entitledHolders(db: SupabaseClient, country: string): Promise<Set<string>> {
+  const [{ data: amb }, { data: admins }] = await Promise.all([
+    db.from("allowlist").select("wallet_pubkey").eq("role", "ambassador").eq("country", country).is("removed_at", null),
+    db.from("allowlist").select("wallet_pubkey").eq("role", "global_admin").is("removed_at", null),
+  ]);
+  return new Set([...(amb ?? []), ...(admins ?? [])].map((a) => a.wallet_pubkey));
+}
+
+// Whether a wallet is an active ambassador OF THIS chapter (only these may issue grants).
+async function isChapterAmbassador(db: SupabaseClient, country: string, wallet: string): Promise<boolean> {
   const { data } = await db
     .from("allowlist")
     .select("wallet_pubkey")
     .eq("role", "ambassador")
     .eq("country", country)
-    .is("removed_at", null);
-  return new Set((data ?? []).map((a) => a.wallet_pubkey));
+    .eq("wallet_pubkey", wallet)
+    .is("removed_at", null)
+    .maybeSingle();
+  return !!data;
 }
 
 export async function GET() {
@@ -41,14 +54,16 @@ export async function GET() {
   if (!s || !s.country) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const db = supabaseService();
   const scope = scopeFor(s.country);
-  const ambassadors = await chapterAmbassadors(db, s.country);
-  if (!ambassadors.has(s.wallet_pubkey)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Only a chapter ambassador (a CK holder) issues grants; recipients are the broader
+  // entitled set (chapter ambassadors + global_admin recovery holders).
+  if (!(await isChapterAmbassador(db, s.country, s.wallet_pubkey))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const holders = await entitledHolders(db, s.country);
 
-  // Scope the identity pull to THIS chapter's ambassadors server-side (don't pull the
-  // whole member_identities table and filter in memory).
-  const ambassadorList = [...ambassadors];
+  // Scope the identity pull to entitled holders server-side (don't pull the whole table).
   const [{ data: ids }, { data: grants }] = await Promise.all([
-    db.from("member_identities").select("wallet_pubkey,enc_public_key").in("wallet_pubkey", ambassadorList),
+    db.from("member_identities").select("wallet_pubkey,enc_public_key").in("wallet_pubkey", [...holders]),
     db.from("scoped_key_grants").select("wallet_pubkey").eq("scope", scope).is("superseded_at", null),
   ]);
   const granted = new Set((grants ?? []).map((g) => g.wallet_pubkey));
@@ -61,10 +76,12 @@ export async function POST(req: Request) {
   if (!s || !s.country) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const db = supabaseService();
   const scope = scopeFor(s.country);
-  const ambassadors = await chapterAmbassadors(db, s.country);
 
   // Caller must be a still-active ambassador of this chapter AND already enrolled.
-  if (!ambassadors.has(s.wallet_pubkey)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!(await isChapterAmbassador(db, s.country, s.wallet_pubkey))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const holders = await entitledHolders(db, s.country);
   const { data: self } = await db
     .from("scoped_key_grants")
     .select("wallet_pubkey")
@@ -84,7 +101,7 @@ export async function POST(req: Request) {
         typeof (g as { wallet_pubkey?: unknown }).wallet_pubkey === "string" &&
         isValidSealedKey((g as { sealed_key?: unknown }).sealed_key),
     )
-    .filter((g) => ambassadors.has(g.wallet_pubkey));
+    .filter((g) => holders.has(g.wallet_pubkey));
 
   // Insert-only: never overwrite an existing active grant (no peer lockout).
   const { data: existing } = await db
