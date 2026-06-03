@@ -34,11 +34,14 @@ export async function GET() {
   const holders = await entitledHolders(db, s.country);
   const needsRekey = (grants ?? []).some((g) => !holders.has(g.wallet_pubkey));
 
-  return NextResponse.json({
-    initialised: marker != null,
-    grant: mine ? { sealed_key: mine.sealed_key } : null,
-    needs_rekey: needsRekey,
-  });
+  return NextResponse.json(
+    {
+      initialised: marker != null,
+      grant: mine ? { sealed_key: mine.sealed_key } : null,
+      needs_rekey: needsRekey,
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
 }
 
 // First ambassador of the chapter: seal the freshly generated CK to themselves. The

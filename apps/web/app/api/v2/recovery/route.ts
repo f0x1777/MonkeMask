@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     .eq("wallet_pubkey", s.wallet_pubkey)
     .is("superseded_at", null)
     .maybeSingle();
-  if (!grant) return NextResponse.json({ grant: null, records: [] });
+  if (!grant) return NextResponse.json({ grant: null, records: [] }, { headers: { "cache-control": "no-store" } });
 
   const { data: records } = await db
     .from("encrypted_roster_records")
@@ -36,5 +36,5 @@ export async function GET(req: Request) {
     actor_wallet: s.wallet_pubkey,
     target_country: chapter,
   });
-  return NextResponse.json({ grant, records: records ?? [] });
+  return NextResponse.json({ grant, records: records ?? [] }, { headers: { "cache-control": "no-store" } });
 }

@@ -83,5 +83,11 @@ export async function DELETE(req: Request) {
     target_country: entry.country,
     metadata: { removed: wallet, role: entry.role },
   });
-  return NextResponse.json({ ok: true });
+  // Surface that a re-key is now outstanding (a remaining holder must rotate the CK to
+  // cryptographically revoke this member).
+  return NextResponse.json({
+    ok: true,
+    needs_rekey: entry.role === "ambassador",
+    scope: entry.country ? `chapter:${entry.country}` : null,
+  });
 }

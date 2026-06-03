@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     action: "chapter.rekey",
     actor_wallet: s.wallet_pubkey,
     target_country: s.country,
-    metadata: { key_version: version, holders: grants.map((g) => g.wallet_pubkey), records: records.length },
+    metadata: { key_version: version, holders: grants.length, records: records.length },
   });
   return NextResponse.json({ ok: true, key_version: version, holders: grants.length });
 }

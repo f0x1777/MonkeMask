@@ -35,8 +35,9 @@ export async function GET() {
   const granted = new Set((grants ?? []).map((g) => g.wallet_pubkey));
   const pending = (ids ?? []).filter((i) => !granted.has(i.wallet_pubkey));
   // `holders` = every entitled holder with a registered identity (granted or not); the
-  // re-key flow seals the new CK to all of them.
-  return NextResponse.json({ pending, holders: ids ?? [] });
+  // re-key flow seals the new CK to all of them. Never cache — the holder set drives
+  // revocation, so a stale list could re-seal the CK to a just-removed member.
+  return NextResponse.json({ pending, holders: ids ?? [] }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(req: Request) {
