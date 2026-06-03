@@ -180,3 +180,42 @@ def test_rotate_bad_degrees_is_400(client):
 
 def test_rotate_unknown_session_is_404(client):
     assert client.post("/api/rotate", json={"session": "nope", "degrees": 90}).status_code == 404
+
+
+def test_flip_redetects_and_returns_faces(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    n0 = len(r.json()["faces"])
+    fr = client.post("/api/flip", json={"session": sid})
+    assert fr.status_code == 200
+    assert fr.json()["session"] == sid
+    # FakeDetector returns a fixed set, so the count is stable after mirroring.
+    assert len(fr.json()["faces"]) == n0
+
+
+def test_flip_mirrors_pixels_and_is_its_own_inverse(client):
+    # An asymmetric photo (right half lighter) so a horizontal mirror is observable.
+    arr = np.zeros((300, 300, 3), dtype=np.uint8)
+    arr[:, 150:] = 200
+    buf = io.BytesIO()
+    Image.fromarray(arr, "RGB").save(buf, format="PNG")
+    sid = client.post("/api/detect", files={"photo": ("p.png", buf.getvalue(), "image/png")}).json()["session"]
+    photo = client.app.state.sessions.path(sid) / "photo"
+
+    def pixels():
+        # Close the file handle immediately so Windows doesn't keep the photo locked
+        # (which would make the next /api/flip overwrite fail) — keeps CI non-flaky.
+        with Image.open(photo) as im:
+            return np.asarray(im.convert("RGB"))
+
+    original = pixels()
+    assert client.post("/api/flip", json={"session": sid}).status_code == 200
+    once = pixels()
+    assert not np.array_equal(once, original)  # mirroring changed the image
+    assert np.array_equal(once, original[:, ::-1])  # exactly a left-right mirror
+    assert client.post("/api/flip", json={"session": sid}).status_code == 200
+    assert np.array_equal(pixels(), original)  # flipping twice restores it
+
+
+def test_flip_unknown_session_is_404(client):
+    assert client.post("/api/flip", json={"session": "nope"}).status_code == 404

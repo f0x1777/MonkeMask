@@ -121,6 +121,33 @@ export default function Home() {
     }
   }
 
+  async function flipPhoto() {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/flip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "flip failed");
+      const data = await r.json();
+      setFaces(data.faces);
+      // Mirroring renumbers faces; clear assignments/results to stay consistent.
+      setAssign({});
+      setOffsets({});
+      setLayout(null);
+      setSelectedFace(null);
+      setSelectedMonke(null);
+      setDragTarget(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onMonkes(e: React.ChangeEvent<HTMLInputElement>) {
     if (!session || !e.target.files?.length) return;
     setBusy(true);
@@ -460,11 +487,14 @@ export default function Home() {
           {session && (
             <div style={S.rotateRow}>
               <span style={{ color: ui.textDim, fontSize: 14 }}>Photo sideways?</span>
-              <button style={S.rotateBtn} onClick={() => rotatePhoto(270)} disabled={busy} title="rotate left">
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(270)} disabled={busy || downloading} title="rotate left">
                 ↺ Rotate left
               </button>
-              <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy} title="rotate right">
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy || downloading} title="rotate right">
                 ↻ Rotate right
+              </button>
+              <button style={S.rotateBtn} onClick={flipPhoto} disabled={busy || downloading} title="mirror horizontally">
+                🪞 Mirror
               </button>
             </div>
           )}
