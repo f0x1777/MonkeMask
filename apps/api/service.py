@@ -45,6 +45,22 @@ def detect_faces(photo_path: str | Path, detector, *, min_confidence=None):
     return out
 
 
+def embed_regions(photo_path: str | Path, regions, embedder):
+    """ArcFace embedding per face ``region`` (regions are the stored detect order, so
+    indices line up with /api/detect, /api/compose and /api/layout). Returns
+    ``[{"face_index": i, "embedding": [floats] | None}]``. Used by the v2 platform to
+    recognise known people across an ambassador's photos (matching is client-side)."""
+    image = load_image(photo_path)
+    out = []
+    for i, r in enumerate(regions):
+        try:
+            vec = embedder.embed(image, r)
+            out.append({"face_index": i, "embedding": [float(x) for x in vec]})
+        except Exception:
+            out.append({"face_index": i, "embedding": None})
+    return out
+
+
 def rotate_photo(photo_path: str | Path, degrees: int) -> None:
     """Rotate the stored photo in place by ``degrees`` (90/180/270, clockwise).
     Saved as PNG bytes so EXIF can't reintroduce a rotation on reload."""

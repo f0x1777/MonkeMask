@@ -1,0 +1,258 @@
+"use client";
+
+import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
+import { useCallback, useRef, useState } from "react";
+
+import { b64decode, b64encode } from "./bytes";
+import { decrypt, encrypt, generateKeyBytes, importAesKey } from "./crypto";
+import { deriveEncKeypair, openSealedSecret, sealSecretToAdmin } from "./global";
+import { emptyRoster, findMatch, type Roster, type RosterEntry } from "./roster";
+import { identityBindingMessage, MEMBER_ENC_IDENTITY_MESSAGE, verifyIdentityBinding } from "./siws";
+
+type Holder = { wallet_pubkey: string; enc_public_key: string; identity_sig: string | null };
+
+// Only seal to recipients whose wallet actually signed their pubkey (binding verified
+// client-side) — a compromised server can't make us seal to a substituted key.
+function verifiedHolders(holders: Holder[]): Holder[] {
+  return holders.filter((h) => !!h.identity_sig && verifyIdentityBinding(h.enc_public_key, h.identity_sig, h.wallet_pubkey));
+}
+
+// Seal the CK to every entitled holder of this chapter who is registered but ungranted
+// (chapter mates + global_admin recovery holders). Idempotent: only seals to the pending
+// set the server returns. Returns how many were granted.
+async function sealCkToPending(ckBytes: Uint8Array): Promise<number> {
+  const pendingList: Holder[] = (await fetch("/api/v2/chapter/grants").then((r) => r.json())).pending ?? [];
+  const grants = verifiedHolders(pendingList).map((p) => ({
+    wallet_pubkey: p.wallet_pubkey,
+    sealed_key: sealSecretToAdmin(ckBytes, p.enc_public_key),
+  }));
+  if (grants.length === 0) return 0;
+  const r = await fetch("/api/v2/chapter/grants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ grants }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "grant_failed");
+  return (await r.json()).granted ?? grants.length;
+}
+
+export type VaultApi = {
+  unlock: () => Promise<void>;
+  saveEntry: (embedding: number[], monke: string) => Promise<void>;
+  resetEntry: (personId: string) => Promise<void>;
+  match: (embedding: number[]) => RosterEntry | null;
+  enrollPending: () => Promise<number>;
+  rekey: () => Promise<void>;
+  entries: { person_id: string; monke: string }[];
+  busy: boolean;
+  locked: boolean;
+  pending: boolean;
+  needsRekey: boolean; // a removed member still holds an active grant — rotate the CK
+  count: number;
+  canUnlock: boolean;
+};
+
+// The chapter vault, multi-holder + per-record. One signature derives the ambassador's
+// encryption identity; the chapter key (CK) is sealed to it (shared across the chapter's
+// ambassadors). Each face<->monke is its own encrypted ROW, so concurrent saves don't
+// clobber and a single person can be reset. CK lives only in memory.
+export function useVault(): VaultApi {
+  const { signMessage } = useWallet();
+  const [ck, setCk] = useState<CryptoKey | null>(null);
+  const ckBytesRef = useRef<Uint8Array | null>(null); // raw CK, to seal to chapter mates
+  // rosterRef is the authoritative, always-current roster; state mirrors it for render.
+  // Reading the ref (not a closed-over state value) is what prevents rapid saves from
+  // each starting from a stale snapshot.
+  const rosterRef = useRef<Roster>(emptyRoster());
+  const [, forceRender] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [needsRekey, setNeedsRekey] = useState(false);
+
+  const setRoster = useCallback((next: Roster) => {
+    rosterRef.current = next;
+    forceRender((n) => n + 1);
+  }, []);
+
+  const deriveIdentity = useCallback(async () => {
+    if (!signMessage) throw new Error("wallet_not_connected");
+    const sig = await signMessage(new TextEncoder().encode(MEMBER_ENC_IDENTITY_MESSAGE));
+    return deriveEncKeypair(sig);
+  }, [signMessage]);
+
+  const registerIdentity = useCallback(
+    async (encPublicKey: Uint8Array) => {
+      if (!signMessage) throw new Error("wallet_not_connected");
+      const encB64 = b64encode(encPublicKey);
+      // Sign the pubkey with the wallet so granters can verify ownership (anti-substitution).
+      const sig = await signMessage(new TextEncoder().encode(identityBindingMessage(encB64)));
+      await fetch("/api/v2/member/identity", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enc_public_key: encB64, identity_sig: bs58.encode(sig) }),
+      });
+    },
+    [signMessage],
+  );
+
+  const loadRoster = useCallback(
+    async (key: CryptoKey) => {
+      const records: { id: string; person_id: string; ciphertext: string; iv: string }[] =
+        (await fetch("/api/v2/roster/records").then((r) => r.json())).records ?? [];
+      const entries: RosterEntry[] = [];
+      for (const r of records) {
+        try {
+          const plain = await decrypt(key, b64decode(r.ciphertext), b64decode(r.iv));
+          const { embedding, monke } = JSON.parse(new TextDecoder().decode(plain));
+          entries.push({ person_id: r.person_id, embedding, monke });
+        } catch {
+          /* skip an unreadable record */
+        }
+      }
+      setRoster({ version: 1, entries });
+    },
+    [setRoster],
+  );
+
+  const unlock = useCallback(async () => {
+    setBusy(true);
+    setPending(false);
+    try {
+      const enc = await deriveIdentity();
+      const { initialised, grant, needs_rekey } = await fetch("/api/v2/chapter/key").then((r) => r.json());
+      setNeedsRekey(!!needs_rekey);
+
+      if (grant) {
+        const bytes = openSealedSecret(grant.sealed_key, enc);
+        if (!bytes) throw new Error("grant_unreadable");
+        ckBytesRef.current = bytes;
+        const key = await importAesKey(bytes);
+        setCk(key);
+        await loadRoster(key);
+        // Reconcile: cover any newly-entitled holders (new chapter mates / global-admin
+        // recovery holders) that registered after this CK was first distributed.
+        void sealCkToPending(bytes).catch(() => {});
+      } else if (!initialised) {
+        await registerIdentity(enc.publicKey);
+        const bytes = generateKeyBytes();
+        const sealed = sealSecretToAdmin(bytes, b64encode(enc.publicKey));
+        const r = await fetch("/api/v2/chapter/key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sealed_key: sealed }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "init_failed");
+        ckBytesRef.current = bytes;
+        setCk(await importAesKey(bytes));
+        setRoster(emptyRoster());
+        // Auto-seal the CK to recovery holders (global admins) + any chapter mates, so
+        // the chapter is never single-holder / unrecoverable. Best-effort.
+        void sealCkToPending(bytes).catch(() => {});
+      } else {
+        await registerIdentity(enc.publicKey);
+        setPending(true);
+        throw new Error("pending_enrollment");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [deriveIdentity, registerIdentity, loadRoster, setRoster]);
+
+  // Save one face<->monke as its own encrypted row. Reads rosterRef (current) to find a
+  // matching known person, so saves never start from a stale snapshot and never clobber.
+  const saveEntry = useCallback(
+    async (embedding: number[], monke: string) => {
+      if (!ck) throw new Error("locked");
+      const cur = rosterRef.current;
+      const matched = findMatch(embedding, cur);
+      const personId = matched?.person_id ?? crypto.randomUUID();
+      const next: Roster = {
+        version: 1,
+        entries: [...cur.entries.filter((e) => e.person_id !== personId), { person_id: personId, embedding, monke }],
+      };
+      setRoster(next); // optimistic + makes the personId visible to the next save
+      const { iv, ciphertext } = await encrypt(ck, new TextEncoder().encode(JSON.stringify({ embedding, monke })));
+      await fetch("/api/v2/roster/records", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ person_id: personId, ciphertext: b64encode(ciphertext), iv: b64encode(iv) }),
+      });
+    },
+    [ck, setRoster],
+  );
+
+  // Reset a person (sold/changed their monke): delete their record everywhere.
+  const resetEntry = useCallback(
+    async (personId: string) => {
+      const cur = rosterRef.current;
+      setRoster({ version: 1, entries: cur.entries.filter((e) => e.person_id !== personId) });
+      await fetch(`/api/v2/roster/records?person_id=${encodeURIComponent(personId)}`, { method: "DELETE" });
+    },
+    [setRoster],
+  );
+
+  const match = useCallback(
+    (embedding: number[]) => findMatch(embedding, rosterRef.current),
+    [],
+  );
+
+  const enrollPending = useCallback(async (): Promise<number> => {
+    const bytes = ckBytesRef.current;
+    if (!bytes) throw new Error("locked");
+    return sealCkToPending(bytes);
+  }, []);
+
+  // Rotate the CK to revoke a removed member: new CK, re-encrypt every record under it,
+  // re-seal it to every REMAINING entitled holder, applied atomically server-side. The
+  // removed member's old grant + old CK can no longer read the re-encrypted records.
+  const rekey = useCallback(async () => {
+    const oldBytes = ckBytesRef.current;
+    if (!oldBytes) throw new Error("locked");
+    const cur = rosterRef.current;
+    const newCk = generateKeyBytes();
+    const newKey = await importAesKey(newCk);
+
+    const records: { person_id: string; ciphertext: string; iv: string }[] = [];
+    for (const e of cur.entries) {
+      const { iv, ciphertext } = await encrypt(
+        newKey,
+        new TextEncoder().encode(JSON.stringify({ embedding: e.embedding, monke: e.monke })),
+      );
+      records.push({ person_id: e.person_id, ciphertext: b64encode(ciphertext), iv: b64encode(iv) });
+    }
+
+    const holders: Holder[] = (await fetch("/api/v2/chapter/grants").then((r) => r.json())).holders ?? [];
+    const grants = verifiedHolders(holders).map((h) => ({
+      wallet_pubkey: h.wallet_pubkey,
+      sealed_key: sealSecretToAdmin(newCk, h.enc_public_key),
+    }));
+
+    const r = await fetch("/api/v2/chapter/rekey", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ grants, records }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "rekey_failed");
+    ckBytesRef.current = newCk;
+    setCk(newKey);
+    setNeedsRekey(false);
+  }, []);
+
+  const roster = rosterRef.current;
+  return {
+    unlock,
+    saveEntry,
+    resetEntry,
+    match,
+    enrollPending,
+    rekey,
+    entries: roster.entries.map((e) => ({ person_id: e.person_id, monke: e.monke })),
+    busy,
+    locked: ck === null,
+    pending,
+    needsRekey,
+    count: roster.entries.length,
+    canUnlock: !!signMessage,
+  };
+}

@@ -64,6 +64,16 @@ def _detector():
     return app.state.detector
 
 
+def _embedder():
+    # Lazy ArcFace embedder, reused (heavy model load). Only the v2 platform uses it,
+    # to recognise known people across an ambassador's photos.
+    if getattr(app.state, "embedder", None) is None:
+        from monkepic.embedder import FaceEmbedder
+
+        app.state.embedder = FaceEmbedder()
+    return app.state.embedder
+
+
 def _check(upload: UploadFile, data: bytes, limit: int) -> None:
     ext = Path(upload.filename or "").suffix.lower()
     if ext not in SUPPORTED:
@@ -214,6 +224,28 @@ def photo(session: str):
     buf = _io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/v2/embeddings")
+async def v2_embeddings(payload: dict):
+    """ArcFace embedding per detected face (same indices as /api/detect), for the v2
+    platform's client-side recognition of known people. The embeddings leave the
+    server only to the authenticated ambassador, who encrypts them into their roster."""
+    store: SessionStore = app.state.sessions
+    sid = payload.get("session")
+    if not sid or not store.exists(sid):
+        raise HTTPException(404, "unknown or expired session")
+
+    from monkepic.types import FaceRegion
+
+    faces_meta = json.loads((store.path(sid) / "faces.json").read_text())
+    regions = [
+        FaceRegion(m["x"], m["y"], m["w"], m["h"],
+                   tuple(m["left_eye"]), tuple(m["right_eye"]))
+        for m in faces_meta
+    ]
+    embeddings = service.embed_regions(store.path(sid) / "photo", regions, _embedder())
+    return {"embeddings": embeddings}
 
 
 @app.post("/api/layout")

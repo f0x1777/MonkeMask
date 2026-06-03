@@ -36,6 +36,9 @@ models/
 .env.*
 !.env.example
 
+# Supabase CLI local state (may contain connection metadata)
+supabase/.temp/
+
 # Generated anonymized outputs (written next to input by default)
 *-monked.png
 *-monked.jpg

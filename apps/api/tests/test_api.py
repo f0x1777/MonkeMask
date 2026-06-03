@@ -19,10 +19,20 @@ class FakeDetector:
         ]
 
 
+class FakeEmbedder:
+    """Embeds each face to a unit vector keyed by the region's x (deterministic)."""
+
+    def embed(self, image, region):
+        v = np.zeros(512, dtype=float)
+        v[region.x % 512] = 1.0
+        return v
+
+
 @pytest.fixture
 def client(tmp_path):
     main.app.state.sessions = SessionStore(root=tmp_path)
     main.app.state.detector = FakeDetector()
+    main.app.state.embedder = FakeEmbedder()
     return TestClient(main.app)
 
 
@@ -116,6 +126,21 @@ def test_layout_returns_cutouts_and_placements(client):
     assert it["monke"].startswith("data:image/png;base64,")
     for k in ("cx", "cy", "w", "h", "roll_deg", "z"):
         assert k in it
+
+
+def test_v2_embeddings_returns_one_per_face(client):
+    r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
+    sid = r.json()["session"]
+    n = len(r.json()["faces"])
+    e = client.post("/api/v2/embeddings", json={"session": sid})
+    assert e.status_code == 200
+    embs = e.json()["embeddings"]
+    assert [x["face_index"] for x in embs] == list(range(n))
+    assert len(embs[0]["embedding"]) == 512
+
+
+def test_v2_embeddings_unknown_session_is_404(client):
+    assert client.post("/api/v2/embeddings", json={"session": "nope"}).status_code == 404
 
 
 def test_layout_unknown_session_is_404(client):
