@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { b64decode } from "../../../../../lib/v2/bytes";
 import { requireRole } from "../../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
+
+// A nacl sealed box of a 32-byte CK is 80 bytes -> 108 base64 chars.
+function isValidSealedKey(s: unknown): s is string {
+  if (typeof s !== "string" || s.length > 120) return false;
+  try {
+    return b64decode(s).length === 80;
+  } catch {
+    return false;
+  }
+}
 
 // Enrollment for a chapter. An already-enrolled, still-active chapter ambassador seals
 // the CK to each pending ambassador of the same chapter. Mirrors the global enrollment
@@ -33,14 +44,15 @@ export async function GET() {
   const ambassadors = await chapterAmbassadors(db, s.country);
   if (!ambassadors.has(s.wallet_pubkey)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
+  // Scope the identity pull to THIS chapter's ambassadors server-side (don't pull the
+  // whole member_identities table and filter in memory).
+  const ambassadorList = [...ambassadors];
   const [{ data: ids }, { data: grants }] = await Promise.all([
-    db.from("member_identities").select("wallet_pubkey,enc_public_key"),
+    db.from("member_identities").select("wallet_pubkey,enc_public_key").in("wallet_pubkey", ambassadorList),
     db.from("scoped_key_grants").select("wallet_pubkey").eq("scope", scope).is("superseded_at", null),
   ]);
   const granted = new Set((grants ?? []).map((g) => g.wallet_pubkey));
-  const pending = (ids ?? []).filter(
-    (i) => ambassadors.has(i.wallet_pubkey) && !granted.has(i.wallet_pubkey),
-  );
+  const pending = (ids ?? []).filter((i) => !granted.has(i.wallet_pubkey));
   return NextResponse.json({ pending });
 }
 
@@ -70,7 +82,7 @@ export async function POST(req: Request) {
     .filter(
       (g: unknown): g is { wallet_pubkey: string; sealed_key: string } =>
         typeof (g as { wallet_pubkey?: unknown }).wallet_pubkey === "string" &&
-        typeof (g as { sealed_key?: unknown }).sealed_key === "string",
+        isValidSealedKey((g as { sealed_key?: unknown }).sealed_key),
     )
     .filter((g) => ambassadors.has(g.wallet_pubkey));
 
