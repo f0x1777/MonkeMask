@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { CHAPTERS, chapterLabel } from "../../../lib/v2/chapters";
+import { CHAPTERS, COUNTRIES, chapterLabel } from "../../../lib/v2/chapters";
 import { ui } from "../../theme";
 
 type Entry = {
@@ -15,9 +15,10 @@ type RosterStat = { country: string; record_count: number | null };
 
 const ERRORS: Record<string, string> = {
   invalid_wallet: "That doesn't look like a Solana wallet address.",
-  invalid_role: "Pick Global Admin or Local Ambassador.",
-  country_required: "Local Ambassadors need a chapter.",
+  invalid_role: "Pick a role from the list.",
+  country_required: "Ambassadors need a chapter / country.",
   invalid_chapter: "Pick a chapter from the list.",
+  invalid_country: "Pick a country from the list.",
   already_exists: "That wallet is already on the allowlist.",
   insert_failed: "Couldn't add the wallet. Try again.",
   forbidden: "Only a super admin can do this.",
@@ -44,7 +45,7 @@ export function AdminPanel({ role }: { role: string }) {
   const [stats, setStats] = useState<RosterStat[]>([]);
   const [total, setTotal] = useState(0);
   const [wallet, setWallet] = useState("");
-  const [newRole, setNewRole] = useState<"ambassador" | "global_admin">("ambassador");
+  const [newRole, setNewRole] = useState<"ambassador" | "country_ambassador" | "global_admin">("ambassador");
   const [country, setCountry] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -155,15 +156,29 @@ export function AdminPanel({ role }: { role: string }) {
               <select
                 style={input}
                 value={newRole}
-                onChange={(e) => setNewRole(e.target.value as "ambassador" | "global_admin")}
+                onChange={(e) => {
+                  setNewRole(e.target.value as "ambassador" | "country_ambassador" | "global_admin");
+                  setCountry("");
+                }}
               >
                 <option value="ambassador">Local Ambassador</option>
+                <option value="country_ambassador">Country Ambassador</option>
                 <option value="global_admin">Global Admin</option>
               </select>
               {newRole === "ambassador" && (
                 <select style={input} value={country} onChange={(e) => setCountry(e.target.value)}>
                   <option value="">— chapter —</option>
                   {CHAPTERS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {newRole === "country_ambassador" && (
+                <select style={input} value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <option value="">— country —</option>
+                  {COUNTRIES.map((c) => (
                     <option key={c.code} value={c.code}>
                       {c.flag} {c.label}
                     </option>

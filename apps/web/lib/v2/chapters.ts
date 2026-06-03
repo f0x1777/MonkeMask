@@ -41,3 +41,42 @@ export function chapterLabel(code: string | null): string {
   const c = BY_CODE.get(code);
   return c ? `${c.flag} ${c.label}` : code;
 }
+
+// ---- Countries (the tier above chapters) ------------------------------------
+// A chapter code is "<COUNTRY>" or "<COUNTRY>-<CITY>" (e.g. "AR", "US-NY"). A country
+// ambassador covers every chapter sharing the country prefix.
+
+export type Country = { code: string; label: string; flag: string };
+
+/** Country prefix of a chapter code: "US-NY" -> "US", "AR" -> "AR". */
+export function countryOf(chapterCode: string): string {
+  const i = chapterCode.indexOf("-");
+  return i >= 0 ? chapterCode.slice(0, i) : chapterCode;
+}
+
+export const COUNTRIES: Country[] = (() => {
+  const seen = new Map<string, Country>();
+  for (const c of CHAPTERS) {
+    const code = countryOf(c.code);
+    if (!seen.has(code)) seen.set(code, { code, label: c.label.split(" — ")[0], flag: c.flag });
+  }
+  return [...seen.values()];
+})();
+
+const COUNTRY_BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c]));
+
+export function isCountry(code: string): boolean {
+  return COUNTRY_BY_CODE.has(code);
+}
+
+/** "🇺🇸 United States" for a known country code, else the raw code. */
+export function countryLabel(code: string | null): string {
+  if (!code) return "";
+  const c = COUNTRY_BY_CODE.get(code);
+  return c ? `${c.flag} ${c.label}` : code;
+}
+
+/** All chapters belonging to a country. */
+export function chaptersInCountry(country: string): Chapter[] {
+  return CHAPTERS.filter((c) => countryOf(c.code) === country);
+}

@@ -9,6 +9,7 @@ import { useVault } from "../../../lib/v2/useVault";
 import { MonkeAnonymizer, type RosterIntegration } from "../../MonkeAnonymizer";
 import { ui } from "../../theme";
 import { AdminPanel } from "./AdminPanel";
+import { CountryPanel } from "./CountryPanel";
 import { GlobalPanel } from "./GlobalPanel";
 import { RosterBar } from "./RosterBar";
 import { RosterManager } from "./RosterManager";
@@ -103,6 +104,7 @@ export function DashboardClient({
       {(role === "super_admin" || role === "global_admin") && <GlobalPanel role={role} />}
       {role === "ambassador" && <RosterBar country={country} vault={vault} />}
       {role === "ambassador" && <RosterManager vault={vault} />}
+      {role === "country_ambassador" && country && <CountryPanel country={country} />}
       <MonkeAnonymizer roster={roster} enableAssetLookup />
 
     </div>
