@@ -131,18 +131,6 @@ async def rotate(payload: dict):
     return {"session": sid, "faces": _detect_and_store(sid)}
 
 
-@app.post("/api/flip")
-async def flip(payload: dict):
-    """Mirror the session photo horizontally (left-right) and re-detect faces.
-    Resets any prior monke assignments on the client (faces are renumbered)."""
-    store: SessionStore = app.state.sessions
-    sid = payload.get("session")
-    if not sid or not store.exists(sid):
-        raise HTTPException(404, "unknown or expired session")
-    service.flip_photo(store.path(sid) / "photo")
-    return {"session": sid, "faces": _detect_and_store(sid)}
-
-
 @app.post("/api/monkes")
 async def add_monkes(session: str = Form(...), files: list[UploadFile] = None):
     store: SessionStore = app.state.sessions

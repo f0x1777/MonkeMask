@@ -187,35 +187,6 @@ export function MonkeAnonymizer({
     }
   }
 
-  async function flipPhoto() {
-    if (!session) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fetch(`${API}/api/flip`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail || "flip failed");
-      const data = await r.json();
-      setFaces(data.faces);
-      // Mirroring renumbers faces; clear assignments/results to stay consistent.
-      setAssign({});
-      setOffsets({});
-      setEmbeddings({});
-      setLayout(null);
-      setSelectedFace(null);
-      setSelectedMonke(null);
-      setDragTarget(null);
-      await recognise(session, data.faces);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   // v2 only: pull a monke from the asset catalog by Gen2/Gen3 number (the canonical art)
   // instead of uploading a photo. The image is proxied same-origin, then added through
   // the normal monke pipeline.
@@ -535,9 +506,6 @@ export function MonkeAnonymizer({
               </button>
               <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy} title="rotate right">
                 ↻ Rotate right
-              </button>
-              <button style={S.rotateBtn} onClick={flipPhoto} disabled={busy} title="mirror horizontally">
-                🪞 Mirror
               </button>
             </div>
           )}
