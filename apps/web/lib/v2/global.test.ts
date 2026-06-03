@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { b64encode } from "./bytes";
+import { deriveBytes } from "./crypto";
 import {
   deriveEncKeypair,
   newGlobalKeypair,
@@ -28,6 +29,17 @@ describe("global registry crypto", () => {
     const other = await deriveEncKeypair(sig(6));
     expect(b64encode(a.publicKey)).toBe(b64encode(b.publicKey));
     expect(b64encode(a.publicKey)).not.toBe(b64encode(other.publicKey));
+  });
+
+  it("the enc-identity seed is domain-separated from other HKDF info (no collision)", async () => {
+    // Same signature, different HKDF info -> independent outputs. This guards against a
+    // refactor accidentally unifying the enc-identity derivation with the vault KEK.
+    const s = sig(9);
+    const identitySeed = await deriveBytes(s, "monkemask-v2/global-admin-enc-identity/v1", 32);
+    const otherSeed = await deriveBytes(s, "ambassador-vault-key-encryption-key", 32);
+    expect(b64encode(identitySeed)).not.toBe(b64encode(otherSeed));
+    // and deterministic for the same info
+    expect(b64encode(await deriveBytes(s, "x", 32))).toBe(b64encode(await deriveBytes(s, "x", 32)));
   });
 
   it("seals the global secret to an admin's identity; only that admin can open it", async () => {
