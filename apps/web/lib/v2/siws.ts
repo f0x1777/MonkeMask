@@ -19,6 +19,11 @@ export const KEK_DERIVATION_MESSAGE =
 export const GLOBAL_ENC_IDENTITY_MESSAGE =
   "MonkeMask v2 — derive my GLOBAL registry identity. Only sign this in the official app.";
 
+// The message a chapter/country ambassador signs to derive their encryption identity
+// (the chapter CK is sealed to it). Per-wallet, reused across the scopes they hold.
+export const MEMBER_ENC_IDENTITY_MESSAGE =
+  "MonkeMask v2 — derive my member identity. Only sign this in the official app.";
+
 /** Build the canonical SIWS sign-in message. Deterministic given (pubkey, nonce) so
  * the server reconstructs the exact same string it asks the client to sign. */
 export function buildSiwsMessage(pubkey: string, nonce: string): string {

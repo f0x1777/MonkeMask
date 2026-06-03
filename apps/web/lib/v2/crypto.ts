@@ -54,6 +54,18 @@ export async function generateDataKey(): Promise<CryptoKey> {
   return subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
+/** A fresh 32-byte data key as raw bytes (a chapter CK). Raw so it can be SEALED to each
+ * holder's identity (sealed boxes carry bytes, not CryptoKey objects). */
+export function generateKeyBytes(): Uint8Array {
+  return globalThis.crypto.getRandomValues(new Uint8Array(32));
+}
+
+/** Import 32 raw key bytes as a NON-extractable AES-256-GCM key (for roster
+ * encrypt/decrypt). Non-extractable so XSS can't re-export it from the CryptoKey. */
+export async function importAesKey(bytes: Uint8Array): Promise<CryptoKey> {
+  return subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
 /** Wrap (encrypt) a data key under a KEK. Returns the iv + wrapped bytes to store. */
 export async function wrapKey(
   kek: CryptoKey,

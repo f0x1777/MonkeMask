@@ -40,6 +40,7 @@ export function RosterBar({
 }) {
   const [consent, setConsent] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/v2/consent")
@@ -55,11 +56,37 @@ export function RosterBar({
 
   async function unlock() {
     setErr(null);
+    setNote(null);
     try {
       await vault.unlock();
     } catch (e) {
       const m = (e as Error).message;
-      setErr(m === "wallet_not_connected" ? "Connect your wallet first." : "Couldn't unlock the vault.");
+      if (m === "pending_enrollment") {
+        setNote(
+          "You're registered for this chapter. Ask an ambassador who already has the roster to grant you access, then unlock again.",
+        );
+      } else {
+        setErr(
+          m === "wallet_not_connected"
+            ? "Connect your wallet first."
+            : m === "grant_unreadable"
+              ? "Your access couldn't be opened (it may need re-issuing)."
+              : "Couldn't unlock the vault.",
+        );
+      }
+    }
+  }
+
+  async function enroll() {
+    setErr(null);
+    setNote(null);
+    try {
+      const n = await vault.enrollPending();
+      setNote(
+        n === 0 ? "No chapter ambassadors are waiting for access." : `Granted access to ${n} ambassador${n > 1 ? "s" : ""}.`,
+      );
+    } catch {
+      setErr("Couldn't grant pending ambassadors.");
     }
   }
 
@@ -92,10 +119,16 @@ export function RosterBar({
           </button>
         </>
       ) : (
-        <span style={{ marginLeft: "auto", fontSize: 14 }}>
-          🔓 Unlocked · <strong>{vault.count}</strong> known {vault.count === 1 ? "person" : "people"}
-        </span>
+        <>
+          <span style={{ marginLeft: "auto", fontSize: 14 }}>
+            🔓 Unlocked · <strong>{vault.count}</strong> known {vault.count === 1 ? "person" : "people"}
+          </span>
+          <button onClick={enroll} disabled={vault.busy} style={btn} title="grant chapter mates who are waiting">
+            👥 Grant pending
+          </button>
+        </>
       )}
+      {note && <p style={{ width: "100%", color: ui.accent, margin: "4px 0 0" }}>{note}</p>}
       {err && <p style={{ width: "100%", color: "#ff6b6b", margin: "4px 0 0" }}>{err}</p>}
     </div>
   );
