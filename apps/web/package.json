@@ -2,11 +2,14 @@
   "name": "monkemask-web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "pretest": "node -e \"const [a,b]=process.versions.node.split('.').map(Number); if(a<22||(a===22&&b<6)){console.error('npm test needs Node >=22.6 for --experimental-strip-types (have '+process.versions.node+')');process.exit(1)}\"",
+    "test": "node --experimental-strip-types --test lib/transform-gestures.test.mts",
     "e2e": "playwright test"
   },
   "dependencies": {
@@ -23,5 +26,8 @@
   },
   "overrides": {
     "postcss": "^8.5.10"
+  },
+  "engines": {
+    "node": ">=18.18.0"
   }
 }
