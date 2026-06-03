@@ -16,6 +16,7 @@ export function useGlobalVault() {
   const { signMessage } = useWallet();
   const [kp, setKp] = useState<BoxKeypair | null>(null);
   const [entries, setEntries] = useState<GlobalEntry[] | null>(null);
+  const [failedCount, setFailedCount] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const deriveGlobalKek = useCallback(async () => {
@@ -58,11 +59,14 @@ export function useGlobalVault() {
       setKp(keypair);
       const raw: { sealed_blob: string }[] = (await fetch("/api/v2/global/entries").then((r) => r.json())).entries ?? [];
       const opened: GlobalEntry[] = [];
+      let failed = 0;
       for (const e of raw) {
         const o = openEntry(e.sealed_blob, keypair);
         if (o) opened.push(o);
+        else failed++; // unopenable/poisoned entry — surfaced, not swallowed
       }
       setEntries(opened);
+      setFailedCount(failed);
     } finally {
       setBusy(false);
     }
@@ -74,6 +78,7 @@ export function useGlobalVault() {
     busy,
     locked: kp === null,
     openedCount: entries?.length ?? 0,
+    failedCount,
     canSign: !!signMessage,
   };
 }

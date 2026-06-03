@@ -4,7 +4,7 @@
 // these to the network. A secret never lands on-chain — the wrap is the custody.
 
 import { b64decode, b64encode } from "./bytes";
-import { unwrapKey, wrapKey } from "./crypto";
+import { unwrapKeyExtractable, wrapKey } from "./crypto";
 import { generateBoxKeypair, seal, sealOpen, type BoxKeypair } from "./sealedbox";
 
 const subtle = globalThis.crypto.subtle;
@@ -51,6 +51,6 @@ export async function wrapSecret(
 
 /** Unwrap the global secret key with the wallet KEK. Throws on a wrong KEK. */
 export async function unwrapSecret(kek: CryptoKey, wrappedB64: string, ivB64: string): Promise<Uint8Array> {
-  const key = await unwrapKey(kek, b64decode(wrappedB64), b64decode(ivB64));
+  const key = await unwrapKeyExtractable(kek, b64decode(wrappedB64), b64decode(ivB64));
   return new Uint8Array(await subtle.exportKey("raw", key));
 }

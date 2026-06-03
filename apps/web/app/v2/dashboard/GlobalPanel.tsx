@@ -110,6 +110,9 @@ export function GlobalPanel({ role }: { role: string }) {
               <span style={{ fontSize: 14 }}>
                 🔓 Unlocked · read access verified on <strong>{vault.openedCount}</strong>{" "}
                 {vault.openedCount === 1 ? "entry" : "entries"}
+                {vault.failedCount > 0 && (
+                  <span style={{ color: "#ff6b6b" }}> · ⚠️ {vault.failedCount} unreadable</span>
+                )}
               </span>
             )}
           </div>

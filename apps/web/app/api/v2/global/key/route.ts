@@ -55,12 +55,18 @@ export async function POST(req: Request) {
     .insert({ id: 1, box_public_key: body.box_public_key, created_by: s.wallet_pubkey });
   if (keyErr) return NextResponse.json({ error: "init_failed" }, { status: 400 });
 
-  await db.from("global_key_grants").insert({
+  // The self-grant is what makes the registry readable. If it fails, roll back the key
+  // row so init can be retried cleanly (otherwise we'd have an unreadable registry).
+  const { error: grantErr } = await db.from("global_key_grants").insert({
     global_admin_wallet: s.wallet_pubkey,
     wrapped_secret: body.wrapped_secret,
     iv: body.iv,
     granted_by: s.wallet_pubkey,
   });
+  if (grantErr) {
+    await db.from("global_registry_key").delete().eq("id", 1);
+    return NextResponse.json({ error: "init_failed" }, { status: 500 });
+  }
   await db.from("audit_log").insert({ action: "global.init", actor_wallet: s.wallet_pubkey });
   return NextResponse.json({ ok: true });
 }

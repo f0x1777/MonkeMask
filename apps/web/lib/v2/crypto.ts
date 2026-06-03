@@ -51,11 +51,34 @@ export async function wrapKey(
 }
 
 /** Unwrap a data key under a KEK. Throws if the KEK is wrong (GCM auth tag fails) —
- * this is exactly how a non-deterministic or foreign signature is rejected. */
+ * this is exactly how a non-deterministic or foreign signature is rejected.
+ *
+ * The unwrapped key is NON-extractable: it can encrypt/decrypt but its raw bytes can
+ * never be exported (so XSS holding the in-memory CryptoKey still can't exfiltrate the
+ * country key). Use ``unwrapKeyExtractable`` only where the raw bytes are needed. */
 export async function unwrapKey(
   kek: CryptoKey,
   wrapped: Uint8Array,
   iv: Uint8Array,
+): Promise<CryptoKey> {
+  return unwrapKeyInternal(kek, wrapped, iv, false);
+}
+
+/** Like ``unwrapKey`` but the result is extractable. Used only for the global box
+ * secret key, whose raw 32 bytes must be exported to rebuild the nacl keypair. */
+export async function unwrapKeyExtractable(
+  kek: CryptoKey,
+  wrapped: Uint8Array,
+  iv: Uint8Array,
+): Promise<CryptoKey> {
+  return unwrapKeyInternal(kek, wrapped, iv, true);
+}
+
+function unwrapKeyInternal(
+  kek: CryptoKey,
+  wrapped: Uint8Array,
+  iv: Uint8Array,
+  extractable: boolean,
 ): Promise<CryptoKey> {
   return subtle.unwrapKey(
     "raw",
@@ -63,7 +86,7 @@ export async function unwrapKey(
     kek,
     { name: "AES-GCM", iv },
     { name: "AES-GCM", length: 256 },
-    true,
+    extractable,
     ["encrypt", "decrypt"],
   );
 }

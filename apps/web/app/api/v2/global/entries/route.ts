@@ -5,6 +5,11 @@ import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
 
+// A sealed entry is {embedding (~4 KB) + monke cutout data URL}. Generous but bounded
+// so a single POST can't store an arbitrarily large blob.
+const MAX_BLOB_CHARS = 1_000_000;
+const READ_LIMIT = 5000;
+
 // Sealed global entries. Ambassadors WRITE (seal to the global public key); only
 // global_admins READ (they hold the secret key). The country is taken from the
 // ambassador's session, never the body, so an ambassador can only contribute under
@@ -16,6 +21,9 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   if (typeof body.sealed_blob !== "string") {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+  if (body.sealed_blob.length > MAX_BLOB_CHARS) {
+    return NextResponse.json({ error: "blob_too_large" }, { status: 413 });
   }
   const db = supabaseService();
   const { error } = await db.from("encrypted_global_registry").insert({
@@ -38,6 +46,7 @@ export async function GET() {
   const { data } = await supabaseService()
     .from("encrypted_global_registry")
     .select("sealed_blob,country")
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(READ_LIMIT);
   return NextResponse.json({ entries: data ?? [] });
 }
