@@ -30,7 +30,10 @@ type LayoutItem = {
 };
 type Layout = { image: { w: number; h: number }; items: LayoutItem[] };
 
-export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {}) {
+export function MonkeAnonymizer({
+  roster,
+  enableAssetLookup,
+}: { roster?: RosterIntegration; enableAssetLookup?: boolean } = {}) {
   const [session, setSession] = useState<string | null>(null);
   const [faces, setFaces] = useState<Face[]>([]);
   const [monkes, setMonkes] = useState<Monke[]>([]);
@@ -48,6 +51,10 @@ export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {})
   const [dispW, setDispW] = useState(0); // displayed width of the preview photo, px
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  // v2 asset-catalog "add by number"
+  const [assetGen, setAssetGen] = useState<"gen2" | "gen3">("gen3");
+  const [assetNum, setAssetNum] = useState("");
+  const [addingAsset, setAddingAsset] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Modal shown when some faces have no monke at Generate time.
@@ -177,6 +184,38 @@ export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {})
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // v2 only: pull a monke from the asset catalog by Gen2/Gen3 number (the canonical art)
+  // instead of uploading a photo. The image is proxied same-origin, then added through
+  // the normal monke pipeline.
+  async function addMonkeByNumber() {
+    if (!session || !assetNum) return;
+    setAddingAsset(true);
+    setError(null);
+    try {
+      const img = await fetch(`/api/v2/assets/image?generation=${assetGen}&number=${encodeURIComponent(assetNum)}`);
+      if (!img.ok) {
+        setError(
+          img.status === 404
+            ? `Monke ${assetGen.toUpperCase()} #${assetNum} isn't in the asset library yet.`
+            : "Couldn't load that monke.",
+        );
+        return;
+      }
+      const fd = new FormData();
+      fd.append("session", session);
+      fd.append("files", await img.blob(), `${assetGen}-${assetNum}.png`);
+      const r = await fetch(`${API}/api/monkes`, { method: "POST", body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "monke add failed");
+      setMonkes((m) => [...m, ...data.monkes]);
+      setAssetNum("");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setAddingAsset(false);
     }
   }
 
@@ -517,6 +556,31 @@ export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {})
             + Add monke images
             <input type="file" accept="image/*" multiple onChange={onMonkes} disabled={busy} hidden />
           </label>
+          {enableAssetLookup && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+              <span style={{ color: ui.textDim, fontSize: 14 }}>or pull by number:</span>
+              <select
+                value={assetGen}
+                onChange={(e) => setAssetGen(e.target.value as "gen2" | "gen3")}
+                style={S.input}
+              >
+                <option value="gen3">Gen3</option>
+                <option value="gen2">Gen2</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                placeholder="#"
+                value={assetNum}
+                onChange={(e) => setAssetNum(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addMonkeByNumber()}
+                style={{ ...S.input, width: 110 }}
+              />
+              <button onClick={addMonkeByNumber} disabled={addingAsset || !assetNum} style={S.secondary}>
+                {addingAsset ? "Adding…" : "🐵 Add monke #"}
+              </button>
+            </div>
+          )}
           <div style={S.grid}>
             {monkes.map((m) => {
               const usedCount = Object.values(assign).filter((id) => id === m.id).length;

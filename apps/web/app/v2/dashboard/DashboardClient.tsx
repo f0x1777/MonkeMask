@@ -103,7 +103,8 @@ export function DashboardClient({
       {(role === "super_admin" || role === "global_admin") && <GlobalPanel role={role} />}
       {role === "ambassador" && <RosterBar country={country} vault={vault} />}
       {role === "ambassador" && <RosterManager vault={vault} />}
-      <MonkeAnonymizer roster={roster} />
+      <MonkeAnonymizer roster={roster} enableAssetLookup />
+
     </div>
   );
 }
