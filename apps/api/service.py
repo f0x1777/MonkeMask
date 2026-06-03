@@ -70,6 +70,13 @@ def rotate_photo(photo_path: str | Path, degrees: int) -> None:
     rotated.save(photo_path, format="PNG")
 
 
+def flip_photo(photo_path: str | Path) -> None:
+    """Mirror the stored photo horizontally (left-right) in place. Saved as PNG."""
+    flip_lr = getattr(getattr(Image, "Transpose", Image), "FLIP_LEFT_RIGHT")
+    image = load_image(photo_path).convert("RGB")
+    image.transpose(flip_lr).save(photo_path, format="PNG")
+
+
 def monke_thumb(monke_path: str | Path) -> str:
     """Background-removed thumbnail of a monke (data URL)."""
     return _png_b64(_thumb(ensure_transparent(load_image(monke_path))))
