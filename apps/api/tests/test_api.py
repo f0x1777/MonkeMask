@@ -209,11 +209,11 @@ def test_flip_mirrors_pixels_and_is_its_own_inverse(client):
             return np.asarray(im.convert("RGB"))
 
     original = pixels()
-    client.post("/api/flip", json={"session": sid})
+    assert client.post("/api/flip", json={"session": sid}).status_code == 200
     once = pixels()
     assert not np.array_equal(once, original)  # mirroring changed the image
     assert np.array_equal(once, original[:, ::-1])  # exactly a left-right mirror
-    client.post("/api/flip", json={"session": sid})
+    assert client.post("/api/flip", json={"session": sid}).status_code == 200
     assert np.array_equal(pixels(), original)  # flipping twice restores it
 
 
