@@ -308,7 +308,8 @@ export default function Home() {
   // the monke center, relative to where the drag began. Instant + local.
   function onMonkeResizeDown(it: LayoutItem, e: React.MouseEvent) {
     if (!layout || !dispW) return;
-    e.preventDefault();
+    // stopPropagation (not preventDefault) so the handle button can still take focus
+    // on click; preventDefault would cancel that and undercut the a11y goal.
     e.stopPropagation();
     setDragTarget(it.face_index);
     const start = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1, rot: 0 };
@@ -335,7 +336,7 @@ export default function Home() {
   // it sweeps around the monke center. Instant + local.
   function onMonkeRotateDown(it: LayoutItem, e: React.MouseEvent) {
     if (!layout || !dispW) return;
-    e.preventDefault();
+    // stopPropagation (not preventDefault) so the handle button stays focusable.
     e.stopPropagation();
     setDragTarget(it.face_index);
     const start = offsets[it.face_index] || { dx: 0, dy: 0, scale: 1, rot: 0 };
