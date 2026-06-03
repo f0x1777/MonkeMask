@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 
 import { chapterLabel } from "../../../lib/v2/chapters";
-import { MonkeAnonymizer } from "../../MonkeAnonymizer";
+import { useVault } from "../../../lib/v2/useVault";
+import { MonkeAnonymizer, type RosterIntegration } from "../../MonkeAnonymizer";
 import { ui } from "../../theme";
 import { AdminPanel } from "./AdminPanel";
 import { RosterBar } from "./RosterBar";
@@ -21,6 +22,14 @@ export function DashboardClient({
   country: string | null;
 }) {
   const router = useRouter();
+  // One vault instance, shared: RosterBar drives unlock + shows the count, while the
+  // anonymizer reads it for auto-match/auto-save. Hook is called unconditionally;
+  // it's only wired in for ambassadors.
+  const vault = useVault();
+  const roster: RosterIntegration | undefined =
+    role === "ambassador"
+      ? { active: !vault.locked, match: vault.match, save: vault.saveEntry }
+      : undefined;
 
   async function signOut() {
     await fetch("/api/v2/auth/signout", { method: "POST" });
@@ -63,8 +72,8 @@ export function DashboardClient({
         </button>
       </header>
       {(role === "super_admin" || role === "global_admin") && <AdminPanel role={role} />}
-      {role === "ambassador" && <RosterBar country={country} />}
-      <MonkeAnonymizer />
+      {role === "ambassador" && <RosterBar country={country} vault={vault} />}
+      <MonkeAnonymizer roster={roster} />
     </div>
   );
 }

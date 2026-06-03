@@ -19,24 +19,24 @@ describe("roster recognition", () => {
     const roster: Roster = {
       version: 1,
       entries: [
-        { person_id: "p1", embedding: unit(10), monke_id: "m1" },
-        { person_id: "p2", embedding: unit(20), monke_id: "m2" },
+        { person_id: "p1", embedding: unit(10), monke: "m1" },
+        { person_id: "p2", embedding: unit(20), monke: "m2" },
       ],
     };
-    expect(findMatch(unit(10), roster)?.monke_id).toBe("m1");
+    expect(findMatch(unit(10), roster)?.monke).toBe("m1");
     expect(findMatch(unit(999 % 512), roster)).toBeNull();
   });
 
   it("upsertEntry adds a new person and updates the monke of a known one", () => {
     let r = emptyRoster();
-    r = upsertEntry(r, { person_id: "p1", embedding: unit(10), monke_id: "m1" });
+    r = upsertEntry(r, { person_id: "p1", embedding: unit(10), monke: "m1" });
     expect(r.entries).toHaveLength(1);
     // same face, different monke -> updates in place, no duplicate
-    r = upsertEntry(r, { person_id: "pX", embedding: unit(10), monke_id: "m9" });
+    r = upsertEntry(r, { person_id: "pX", embedding: unit(10), monke: "m9" });
     expect(r.entries).toHaveLength(1);
-    expect(r.entries[0].monke_id).toBe("m9");
+    expect(r.entries[0].monke).toBe("m9");
     // a new face -> appended
-    r = upsertEntry(r, { person_id: "p2", embedding: unit(20), monke_id: "m2" });
+    r = upsertEntry(r, { person_id: "p2", embedding: unit(20), monke: "m2" });
     expect(r.entries).toHaveLength(2);
   });
 });

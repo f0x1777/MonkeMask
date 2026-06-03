@@ -8,10 +8,22 @@ import { decrypt, deriveKEK, encrypt, generateDataKey, unwrapKey, wrapKey } from
 import { emptyRoster, findMatch, upsertEntry, type Roster, type RosterEntry } from "./roster";
 import { KEK_DERIVATION_MESSAGE } from "./siws";
 
+// The shape returned by useVault, so consumers (RosterBar, the dashboard) can take
+// the shared instance as a prop without re-deriving the type.
+export type VaultApi = {
+  unlock: () => Promise<void>;
+  saveEntry: (embedding: number[], monke: string) => Promise<void>;
+  match: (embedding: number[]) => RosterEntry | null;
+  busy: boolean;
+  locked: boolean;
+  count: number;
+  canUnlock: boolean;
+};
+
 // The ambassador's vault: unlock with one wallet signature (derives the KEK, then
 // unwraps — or first-time generates — the per-country key CK), load + decrypt the
 // roster, and save entries (re-encrypt + persist). The CK lives only in memory.
-export function useVault() {
+export function useVault(): VaultApi {
   const { signMessage } = useWallet();
   const [ck, setCk] = useState<CryptoKey | null>(null);
   const [roster, setRoster] = useState<Roster | null>(null);
@@ -73,9 +85,9 @@ export function useVault() {
   }, [ck]);
 
   const saveEntry = useCallback(
-    async (embedding: number[], monke_id: string) => {
+    async (embedding: number[], monke: string) => {
       if (!ck || !roster) throw new Error("locked");
-      const entry: RosterEntry = { person_id: crypto.randomUUID(), embedding, monke_id };
+      const entry: RosterEntry = { person_id: crypto.randomUUID(), embedding, monke };
       const next = upsertEntry(roster, entry);
       setRoster(next);
       await persist(next);

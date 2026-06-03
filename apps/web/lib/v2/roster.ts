@@ -6,7 +6,8 @@
 export type RosterEntry = {
   person_id: string; // opaque uuid; never a name
   embedding: number[]; // L2-normalised ArcFace 512-d
-  monke_id: string; // which monke covers this person
+  monke: string; // the monke cutout (data URL) — a STABLE identity across sessions,
+  // not the ephemeral per-session monke id, so a known person re-covers consistently
 };
 
 export type Roster = { version: 1; entries: RosterEntry[] };
@@ -53,7 +54,7 @@ export function upsertEntry(
   if (match) {
     return {
       ...roster,
-      entries: roster.entries.map((e) => (e.person_id === match.person_id ? { ...e, monke_id: entry.monke_id } : e)),
+      entries: roster.entries.map((e) => (e.person_id === match.person_id ? { ...e, monke: entry.monke } : e)),
     };
   }
   return { ...roster, entries: [...roster.entries, entry] };

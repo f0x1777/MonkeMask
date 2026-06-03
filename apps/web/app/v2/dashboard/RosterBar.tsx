@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { chapterLabel } from "../../../lib/v2/chapters";
-import { useVault } from "../../../lib/v2/useVault";
+import { type VaultApi } from "../../../lib/v2/useVault";
 import { ui } from "../../theme";
 
 const bar: React.CSSProperties = {
@@ -31,8 +31,13 @@ const btn: React.CSSProperties = {
 
 // Consent gate + vault unlock + roster count for ambassadors. The deep auto-match /
 // auto-save into the anonymizer hooks off the returned vault (next step).
-export function RosterBar({ country }: { country: string | null }) {
-  const vault = useVault();
+export function RosterBar({
+  country,
+  vault,
+}: {
+  country: string | null;
+  vault: VaultApi;
+}) {
   const [consent, setConsent] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
 

@@ -2,9 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ui } from "./theme";
+import { dataUrlToBytes, planAutoMatch } from "./../lib/v2/automatch";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 const NUDGE = 30; // px per nudge, in original-image pixels
+
+// Optional v2 wiring. When absent (the public `/` site), the anonymizer behaves
+// exactly as before. When an ambassador's vault is unlocked, the dashboard passes
+// this so detected faces auto-cover with their known monke and new pairings persist.
+export type RosterIntegration = {
+  active: boolean; // vault unlocked + this is an ambassador
+  match: (embedding: number[]) => { person_id: string; monke: string } | null;
+  save: (embedding: number[], monke: string) => Promise<void>;
+};
 
 type Face = { index: number; x: number; y: number; w: number; h: number; thumb: string };
 type Monke = { id: string; thumb: string };
@@ -17,11 +27,14 @@ type LayoutItem = {
 };
 type Layout = { image: { w: number; h: number }; items: LayoutItem[] };
 
-export function MonkeAnonymizer() {
+export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {}) {
   const [session, setSession] = useState<string | null>(null);
   const [faces, setFaces] = useState<Face[]>([]);
   const [monkes, setMonkes] = useState<Monke[]>([]);
   const [assign, setAssign] = useState<Record<number, string>>({});
+  // v2 only: ArcFace embedding per face index, fetched after detect when the vault
+  // is active. Used to auto-cover known people and to persist new pairings.
+  const [embeddings, setEmbeddings] = useState<Record<number, number[]>>({});
   const [offsets, setOffsets] =
     useState<Record<number, { dx: number; dy: number; scale: number; rot: number }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
@@ -61,6 +74,51 @@ export function MonkeAnonymizer() {
     return msg;
   }
 
+  // v2 only: fetch an embedding per detected face, then auto-cover the faces that
+  // match someone already in the unlocked roster. Each known monke's stored cutout
+  // is uploaded to the session once and assigned to all of its faces. Best-effort —
+  // a recognition hiccup never blocks the normal manual flow. Returns the embeddings
+  // (also stashed in state) so callers can reuse them.
+  async function recognise(sid: string, faceList: Face[]): Promise<Record<number, number[]>> {
+    if (!roster?.active) return {};
+    let emap: Record<number, number[]> = {};
+    try {
+      const er = await fetch(`${API}/api/v2/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session: sid }),
+      });
+      if (!er.ok) return {};
+      const ed = await er.json();
+      for (const it of ed.embeddings as { face_index: number; embedding: number[] | null }[]) {
+        if (it.embedding) emap[it.face_index] = it.embedding;
+      }
+      setEmbeddings(emap);
+
+      const plan = planAutoMatch(faceList, emap, roster.match);
+      if (plan.length === 0) return emap;
+
+      const newMonkes: Monke[] = [];
+      const newAssign: Record<number, string> = {};
+      for (const p of plan) {
+        const fd = new FormData();
+        fd.append("session", sid);
+        fd.append("files", new Blob([dataUrlToBytes(p.monke)], { type: "image/png" }), "monke.png");
+        const mr = await fetch(`${API}/api/monkes`, { method: "POST", body: fd });
+        if (!mr.ok) continue;
+        const uploaded = (await mr.json()).monkes?.[0];
+        if (!uploaded) continue;
+        newMonkes.push(uploaded);
+        for (const fi of p.faces) newAssign[fi] = uploaded.id;
+      }
+      if (newMonkes.length) setMonkes((m) => [...m, ...newMonkes]);
+      if (Object.keys(newAssign).length) setAssign((a) => ({ ...a, ...newAssign }));
+    } catch {
+      /* recognition is best-effort; fall back to manual pairing */
+    }
+    return emap;
+  }
+
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -77,10 +135,12 @@ export function MonkeAnonymizer() {
       setMonkes([]);
       setAssign({});
       setOffsets({});
+      setEmbeddings({});
       setLayout(null);
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
+      await recognise(data.session, data.faces);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -104,10 +164,12 @@ export function MonkeAnonymizer() {
       // Rotation renumbers faces; clear assignments/results to stay consistent.
       setAssign({});
       setOffsets({});
+      setEmbeddings({});
       setLayout(null);
       setSelectedFace(null);
       setSelectedMonke(null);
       setDragTarget(null);
+      await recognise(session, data.faces);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -138,6 +200,14 @@ export function MonkeAnonymizer() {
     setAssign((a) => ({ ...a, [faceIndex]: monkeId }));
     setSelectedFace(null);
     setSelectedMonke(null);
+    // v2 only: persist this person<->monke pairing to the encrypted roster, so the
+    // same face auto-covers next time. Keyed on the stable cutout, not the session
+    // monke id. Best-effort and silent — never blocks the pairing UX.
+    if (roster?.active) {
+      const emb = embeddings[faceIndex];
+      const monke = monkes.find((m) => m.id === monkeId)?.thumb;
+      if (emb && monke) void roster.save(emb, monke).catch(() => {});
+    }
   }
 
   // Click a face: if a monke is already selected, pair them; otherwise select/
@@ -322,6 +392,7 @@ export function MonkeAnonymizer() {
     setMonkes([]);
     setAssign({});
     setOffsets({});
+    setEmbeddings({});
     setSelectedFace(null);
     setSelectedMonke(null);
     setLayout(null);
