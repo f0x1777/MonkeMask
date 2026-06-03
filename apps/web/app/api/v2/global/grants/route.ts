@@ -33,7 +33,7 @@ export async function GET() {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const [{ data: ids }, { data: grants }] = await Promise.all([
-    db.from("global_admin_pubkeys").select("global_admin_wallet,enc_public_key"),
+    db.from("global_admin_pubkeys").select("global_admin_wallet,enc_public_key,identity_sig"),
     db.from("global_key_grants").select("global_admin_wallet"),
   ]);
   const granted = new Set((grants ?? []).map((g) => g.global_admin_wallet));

@@ -1,21 +1,29 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
 import { useCallback, useRef, useState } from "react";
 
 import { b64decode, b64encode } from "./bytes";
 import { decrypt, encrypt, generateKeyBytes, importAesKey } from "./crypto";
 import { deriveEncKeypair, openSealedSecret, sealSecretToAdmin } from "./global";
 import { emptyRoster, findMatch, type Roster, type RosterEntry } from "./roster";
-import { MEMBER_ENC_IDENTITY_MESSAGE } from "./siws";
+import { identityBindingMessage, MEMBER_ENC_IDENTITY_MESSAGE, verifyIdentityBinding } from "./siws";
+
+type Holder = { wallet_pubkey: string; enc_public_key: string; identity_sig: string | null };
+
+// Only seal to recipients whose wallet actually signed their pubkey (binding verified
+// client-side) — a compromised server can't make us seal to a substituted key.
+function verifiedHolders(holders: Holder[]): Holder[] {
+  return holders.filter((h) => !!h.identity_sig && verifyIdentityBinding(h.enc_public_key, h.identity_sig, h.wallet_pubkey));
+}
 
 // Seal the CK to every entitled holder of this chapter who is registered but ungranted
 // (chapter mates + global_admin recovery holders). Idempotent: only seals to the pending
 // set the server returns. Returns how many were granted.
 async function sealCkToPending(ckBytes: Uint8Array): Promise<number> {
-  const pendingList: { wallet_pubkey: string; enc_public_key: string }[] =
-    (await fetch("/api/v2/chapter/grants").then((r) => r.json())).pending ?? [];
-  const grants = pendingList.map((p) => ({
+  const pendingList: Holder[] = (await fetch("/api/v2/chapter/grants").then((r) => r.json())).pending ?? [];
+  const grants = verifiedHolders(pendingList).map((p) => ({
     wallet_pubkey: p.wallet_pubkey,
     sealed_key: sealSecretToAdmin(ckBytes, p.enc_public_key),
   }));
@@ -73,13 +81,20 @@ export function useVault(): VaultApi {
     return deriveEncKeypair(sig);
   }, [signMessage]);
 
-  const registerIdentity = useCallback(async (encPublicKey: Uint8Array) => {
-    await fetch("/api/v2/member/identity", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enc_public_key: b64encode(encPublicKey) }),
-    });
-  }, []);
+  const registerIdentity = useCallback(
+    async (encPublicKey: Uint8Array) => {
+      if (!signMessage) throw new Error("wallet_not_connected");
+      const encB64 = b64encode(encPublicKey);
+      // Sign the pubkey with the wallet so granters can verify ownership (anti-substitution).
+      const sig = await signMessage(new TextEncoder().encode(identityBindingMessage(encB64)));
+      await fetch("/api/v2/member/identity", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enc_public_key: encB64, identity_sig: bs58.encode(sig) }),
+      });
+    },
+    [signMessage],
+  );
 
   const loadRoster = useCallback(
     async (key: CryptoKey) => {
@@ -207,9 +222,8 @@ export function useVault(): VaultApi {
       records.push({ person_id: e.person_id, ciphertext: b64encode(ciphertext), iv: b64encode(iv) });
     }
 
-    const holders: { wallet_pubkey: string; enc_public_key: string }[] =
-      (await fetch("/api/v2/chapter/grants").then((r) => r.json())).holders ?? [];
-    const grants = holders.map((h) => ({
+    const holders: Holder[] = (await fetch("/api/v2/chapter/grants").then((r) => r.json())).holders ?? [];
+    const grants = verifiedHolders(holders).map((h) => ({
       wallet_pubkey: h.wallet_pubkey,
       sealed_key: sealSecretToAdmin(newCk, h.enc_public_key),
     }));

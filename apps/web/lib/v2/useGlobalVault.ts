@@ -1,6 +1,7 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
 import { useCallback, useState } from "react";
 
 import { b64encode } from "./bytes";
@@ -13,7 +14,7 @@ import {
   type GlobalEntry,
 } from "./global";
 import { keypairFromSecret, type BoxKeypair } from "./sealedbox";
-import { GLOBAL_ENC_IDENTITY_MESSAGE } from "./siws";
+import { GLOBAL_ENC_IDENTITY_MESSAGE, identityBindingMessage, verifyIdentityBinding } from "./siws";
 
 // The global_admin side of the registry. A single wallet signature derives the admin's
 // encryption identity; from there: initialise (seal the secret to yourself), unlock
@@ -32,13 +33,19 @@ export function useGlobalVault() {
     return deriveEncKeypair(sig);
   }, [signMessage]);
 
-  const registerIdentity = useCallback(async (enc: BoxKeypair) => {
-    await fetch("/api/v2/global/identity", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enc_public_key: b64encode(enc.publicKey) }),
-    });
-  }, []);
+  const registerIdentity = useCallback(
+    async (enc: BoxKeypair) => {
+      if (!signMessage) throw new Error("wallet_not_connected");
+      const encB64 = b64encode(enc.publicKey);
+      const sig = await signMessage(new TextEncoder().encode(identityBindingMessage(encB64)));
+      await fetch("/api/v2/global/identity", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enc_public_key: encB64, identity_sig: bs58.encode(sig) }),
+      });
+    },
+    [signMessage],
+  );
 
   const loadEntries = useCallback(async (keypair: BoxKeypair) => {
     const raw: { sealed_blob: string }[] = (await fetch("/api/v2/global/entries").then((r) => r.json())).entries ?? [];
@@ -100,12 +107,15 @@ export function useGlobalVault() {
     if (!kp) throw new Error("locked");
     setBusy(true);
     try {
-      const pending: { global_admin_wallet: string; enc_public_key: string }[] =
+      const pending: { global_admin_wallet: string; enc_public_key: string; identity_sig: string | null }[] =
         (await fetch("/api/v2/global/grants").then((r) => r.json())).pending ?? [];
-      const grants = pending.map((p) => ({
-        global_admin_wallet: p.global_admin_wallet,
-        sealed_secret: sealSecretToAdmin(kp.secretKey, p.enc_public_key),
-      }));
+      // Only seal to admins whose wallet signed their pubkey (anti-substitution).
+      const grants = pending
+        .filter((p) => !!p.identity_sig && verifyIdentityBinding(p.enc_public_key, p.identity_sig, p.global_admin_wallet))
+        .map((p) => ({
+          global_admin_wallet: p.global_admin_wallet,
+          sealed_secret: sealSecretToAdmin(kp.secretKey, p.enc_public_key),
+        }));
       if (grants.length === 0) return 0;
       const r = await fetch("/api/v2/global/grants", {
         method: "POST",

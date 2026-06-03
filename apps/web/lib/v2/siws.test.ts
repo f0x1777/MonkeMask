@@ -2,7 +2,7 @@ import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { describe, it, expect } from "vitest";
 
-import { buildSiwsMessage, verifySiws } from "./siws";
+import { buildSiwsMessage, identityBindingMessage, verifyIdentityBinding, verifySiws } from "./siws";
 
 const sign = (msg: string, secret: Uint8Array) =>
   bs58.encode(nacl.sign.detached(new TextEncoder().encode(msg), secret));
@@ -38,5 +38,19 @@ describe("SIWS verify (Task 4 core)", () => {
     const m = buildSiwsMessage("WALLET", "NONCE");
     expect(m).toContain("WALLET");
     expect(m).toContain("Nonce: NONCE");
+  });
+
+  it("verifies an identity binding only for the wallet that signed the exact pubkey", () => {
+    const wallet = nacl.sign.keyPair();
+    const walletB58 = bs58.encode(wallet.publicKey);
+    const encPub = "ENC_PUBKEY_B64_AAAA";
+    const sig = sign(identityBindingMessage(encPub), wallet.secretKey);
+
+    expect(verifyIdentityBinding(encPub, sig, walletB58)).toBe(true);
+    // a different pubkey with the same signature is rejected (no substitution)
+    expect(verifyIdentityBinding("DIFFERENT_PUBKEY", sig, walletB58)).toBe(false);
+    // a different wallet claiming this binding is rejected
+    const other = bs58.encode(nacl.sign.keyPair().publicKey);
+    expect(verifyIdentityBinding(encPub, sig, other)).toBe(false);
   });
 });

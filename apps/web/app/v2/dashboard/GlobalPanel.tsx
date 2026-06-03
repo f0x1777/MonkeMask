@@ -1,13 +1,14 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
 import { useCallback, useEffect, useState } from "react";
 
 import { b64decode, b64encode } from "../../../lib/v2/bytes";
 import { CHAPTERS, chapterLabel } from "../../../lib/v2/chapters";
 import { importAesKey, decrypt } from "../../../lib/v2/crypto";
 import { deriveEncKeypair, openSealedSecret } from "../../../lib/v2/global";
-import { MEMBER_ENC_IDENTITY_MESSAGE } from "../../../lib/v2/siws";
+import { identityBindingMessage, MEMBER_ENC_IDENTITY_MESSAGE } from "../../../lib/v2/siws";
 import { useGlobalVault } from "../../../lib/v2/useGlobalVault";
 import { ui } from "../../theme";
 
@@ -115,10 +116,12 @@ export function GlobalPanel({ role }: { role: string }) {
     try {
       const sig = await signMessage(new TextEncoder().encode(MEMBER_ENC_IDENTITY_MESSAGE));
       const enc = await deriveEncKeypair(sig);
+      const encB64 = b64encode(enc.publicKey);
+      const bindSig = await signMessage(new TextEncoder().encode(identityBindingMessage(encB64)));
       const r = await fetch("/api/v2/member/identity", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enc_public_key: b64encode(enc.publicKey) }),
+        body: JSON.stringify({ enc_public_key: encB64, identity_sig: bs58.encode(bindSig) }),
       });
       if (!r.ok) throw new Error("register_failed");
       setNote("Recovery enabled — chapters will seal their key to you when their ambassadors next unlock.");

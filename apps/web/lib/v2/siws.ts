@@ -24,6 +24,22 @@ export const GLOBAL_ENC_IDENTITY_MESSAGE =
 export const MEMBER_ENC_IDENTITY_MESSAGE =
   "MonkeMask v2 — derive my member identity. Only sign this in the official app.";
 
+// Binds a derived encryption-identity public key to the wallet: the wallet signs this
+// message, so a compromised server can't substitute a different pubkey at enroll time
+// (the granter verifies the wallet actually signed the pubkey before sealing to it).
+export function identityBindingMessage(encPublicKeyB64: string): string {
+  return `MonkeMask v2 — I bind this encryption identity to my wallet:\n${encPublicKeyB64}`;
+}
+
+/** Verify a wallet signed the binding for ``encPublicKeyB64``. Never throws. */
+export function verifyIdentityBinding(
+  encPublicKeyB64: string,
+  signatureBase58: string,
+  walletPubkey: string,
+): boolean {
+  return verifySiws(identityBindingMessage(encPublicKeyB64), signatureBase58, walletPubkey);
+}
+
 /** Build the canonical SIWS sign-in message. Deterministic given (pubkey, nonce) so
  * the server reconstructs the exact same string it asks the client to sign. */
 export function buildSiwsMessage(pubkey: string, nonce: string): string {

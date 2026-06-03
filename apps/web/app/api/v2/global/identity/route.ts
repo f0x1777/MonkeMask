@@ -1,51 +1,47 @@
 import { NextResponse } from "next/server";
 
-import { b64decode } from "../../../../../lib/v2/bytes";
+import { isValidEncPubKey } from "../../../../../lib/v2/identity-server";
 import { requireRole } from "../../../../../lib/v2/require-role";
+import { verifyIdentityBinding } from "../../../../../lib/v2/siws";
 import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
 
-// A global_admin's encryption identity public key, derived from their wallet signature.
-// Registering it lets any existing admin seal the global secret to them (enrollment) —
-// the public key is safe to store in plaintext.
+// A global_admin's encryption identity public key, derived from their wallet signature
+// and signed by the wallet (binding), so an enroller can verify ownership before sealing
+// the secret to it.
 
-const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
-
-// An X25519 box public key must decode to exactly 32 bytes. A wrong-length value would
-// otherwise be stored and later sealed to the wrong key — a silent enrollment lockout.
-function isValidEncPubKey(key: unknown): key is string {
-  if (typeof key !== "string" || key.length > 48 || !B64.test(key)) return false;
-  try {
-    return b64decode(key).length === 32;
-  } catch {
-    return false;
-  }
-}
-
-// Register (or update) the caller's own encryption public key.
+// Register (or update) the caller's own encryption public key + its binding signature.
 export async function POST(req: Request) {
   const s = await requireRole(["global_admin"]);
   if (!s) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
-  const key = body.enc_public_key;
-  if (!isValidEncPubKey(key)) {
+  if (!isValidEncPubKey(body.enc_public_key)) {
     return NextResponse.json({ error: "invalid_key" }, { status: 400 });
+  }
+  if (
+    typeof body.identity_sig !== "string" ||
+    !verifyIdentityBinding(body.enc_public_key, body.identity_sig, s.wallet_pubkey)
+  ) {
+    return NextResponse.json({ error: "invalid_binding" }, { status: 400 });
   }
   const { error } = await supabaseService()
     .from("global_admin_pubkeys")
-    .upsert({ global_admin_wallet: s.wallet_pubkey, enc_public_key: key }, { onConflict: "global_admin_wallet" });
+    .upsert(
+      { global_admin_wallet: s.wallet_pubkey, enc_public_key: body.enc_public_key, identity_sig: body.identity_sig },
+      { onConflict: "global_admin_wallet" },
+    );
   if (error) return NextResponse.json({ error: "save_failed" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
 
 // List registered admin identities (for an existing admin to enroll the ones missing a
-// grant). Returns wallet + pubkey only — no secrets.
+// grant). Returns wallet + pubkey + binding sig — no secrets.
 export async function GET() {
   const s = await requireRole(["global_admin"]);
   if (!s) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { data } = await supabaseService()
     .from("global_admin_pubkeys")
-    .select("global_admin_wallet,enc_public_key");
+    .select("global_admin_wallet,enc_public_key,identity_sig");
   return NextResponse.json({ identities: data ?? [] });
 }

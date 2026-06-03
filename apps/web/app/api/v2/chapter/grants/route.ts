@@ -29,7 +29,7 @@ export async function GET() {
 
   // Scope the identity pull to entitled holders server-side (don't pull the whole table).
   const [{ data: ids }, { data: grants }] = await Promise.all([
-    db.from("member_identities").select("wallet_pubkey,enc_public_key").in("wallet_pubkey", [...holders]),
+    db.from("member_identities").select("wallet_pubkey,enc_public_key,identity_sig").in("wallet_pubkey", [...holders]),
     db.from("scoped_key_grants").select("wallet_pubkey").eq("scope", scope).is("superseded_at", null),
   ]);
   const granted = new Set((grants ?? []).map((g) => g.wallet_pubkey));
