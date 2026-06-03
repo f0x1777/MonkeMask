@@ -41,8 +41,13 @@ test("rotFromDrag keeps the grabbed handle under the pointer", () => {
   assert.equal(rotFromDrag(10, 0, 0), 10); // no movement -> unchanged
 });
 
+// atan2-based results carry floating-point error (e.g. -90.0000000000001), so compare
+// angles within a tolerance rather than with strict equality.
+const closeTo = (actual: number, expected: number, eps = 1e-9) =>
+  assert.ok(Math.abs(actual - expected) < eps, `expected ~${expected}, got ${actual}`);
+
 test("screenAngleDeg and dist helpers", () => {
-  assert.equal(screenAngleDeg(0, -1), -90); // straight up (screen y points down)
-  assert.equal(screenAngleDeg(1, 0), 0);
-  assert.equal(dist(3, 4), 5);
+  closeTo(screenAngleDeg(0, -1), -90); // straight up (screen y points down)
+  closeTo(screenAngleDeg(1, 0), 0);
+  assert.equal(dist(3, 4), 5); // exact: integer Pythagorean triple
 });

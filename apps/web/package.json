@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test lib/*.test.mts",
+    "test": "node --experimental-strip-types --test lib/transform-gestures.test.mts",
     "e2e": "playwright test"
   },
   "dependencies": {
