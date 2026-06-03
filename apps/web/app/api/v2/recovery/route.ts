@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isChapter } from "../../../../lib/v2/chapters";
-import { requireRole } from "../../../../lib/v2/require-role";
+import { requireActiveRole } from "../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
@@ -11,7 +11,8 @@ export const runtime = "nodejs";
 // chapter's encrypted records; the admin opens the grant client-side and decrypts. Only
 // global_admins, and only if a recovery grant was actually sealed to them.
 export async function GET(req: Request) {
-  const s = await requireRole(["global_admin"]);
+  // requireActiveRole: a removed global admin loses recovery read immediately.
+  const s = await requireActiveRole(["global_admin"]);
   if (!s) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const chapter = new URL(req.url).searchParams.get("chapter");
   if (!chapter || !isChapter(chapter)) return NextResponse.json({ error: "invalid_chapter" }, { status: 400 });

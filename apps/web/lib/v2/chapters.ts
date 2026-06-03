@@ -48,10 +48,12 @@ export function chapterLabel(code: string | null): string {
 
 export type Country = { code: string; label: string; flag: string };
 
-/** Country prefix of a chapter code: "US-NY" -> "US", "AR" -> "AR". */
+/** Country prefix of a chapter code: "US-NY" -> "US", "AR" -> "AR". A leading dash has
+ * no valid prefix, so the whole (invalid) code is returned rather than "" — which can't
+ * match any real country. The security paths also gate on isChapter()/isCountry(). */
 export function countryOf(chapterCode: string): string {
   const i = chapterCode.indexOf("-");
-  return i >= 0 ? chapterCode.slice(0, i) : chapterCode;
+  return i > 0 ? chapterCode.slice(0, i) : chapterCode;
 }
 
 export const COUNTRIES: Country[] = (() => {

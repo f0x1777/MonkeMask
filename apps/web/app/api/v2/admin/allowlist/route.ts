@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { validateNewEntry } from "../../../../../lib/v2/allowlist-admin";
+import { chaptersInCountry } from "../../../../../lib/v2/chapters";
 import { requireRole } from "../../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
@@ -83,11 +84,14 @@ export async function DELETE(req: Request) {
     target_country: entry.country,
     metadata: { removed: wallet, role: entry.role },
   });
-  // Surface that a re-key is now outstanding (a remaining holder must rotate the CK to
-  // cryptographically revoke this member).
-  return NextResponse.json({
-    ok: true,
-    needs_rekey: entry.role === "ambassador",
-    scope: entry.country ? `chapter:${entry.country}` : null,
-  });
+  // Surface which chapter scopes now need a re-key to cryptographically revoke this
+  // member: their own chapter (chapter ambassador) or every chapter in their country
+  // (country ambassador). A remaining holder of each must rotate the CK.
+  let scopes: string[] = [];
+  if (entry.role === "ambassador" && entry.country) {
+    scopes = [`chapter:${entry.country}`];
+  } else if (entry.role === "country_ambassador" && entry.country) {
+    scopes = chaptersInCountry(entry.country).map((c) => `chapter:${c.code}`);
+  }
+  return NextResponse.json({ ok: true, needs_rekey: scopes.length > 0, scopes });
 }

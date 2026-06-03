@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { countryOf, isChapter } from "../../../../lib/v2/chapters";
-import { requireRole } from "../../../../lib/v2/require-role";
+import { countryOf, isChapter, isCountry } from "../../../../lib/v2/chapters";
+import { requireActiveRole } from "../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
@@ -10,8 +10,9 @@ export const runtime = "nodejs";
 // ambassadors sealed to them (they are entitled holders of every chapter in the country).
 // Returns their sealed grant + the chapter's records; they open it client-side.
 export async function GET(req: Request) {
-  const s = await requireRole(["country_ambassador"]);
-  if (!s || !s.country) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // requireActiveRole: a removed country ambassador is cut off immediately (not after JWT TTL).
+  const s = await requireActiveRole(["country_ambassador"]);
+  if (!s || !s.country || !isCountry(s.country)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const chapter = new URL(req.url).searchParams.get("chapter");
   if (!chapter || !isChapter(chapter) || countryOf(chapter) !== s.country) {
     return NextResponse.json({ error: "invalid_chapter" }, { status: 400 });
