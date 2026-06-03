@@ -412,13 +412,13 @@ export default function Home() {
           {session && (
             <div style={S.rotateRow}>
               <span style={{ color: ui.textDim, fontSize: 14 }}>Photo sideways?</span>
-              <button style={S.rotateBtn} onClick={() => rotatePhoto(270)} disabled={busy} title="rotate left">
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(270)} disabled={busy || downloading} title="rotate left">
                 ↺ Rotate left
               </button>
-              <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy} title="rotate right">
+              <button style={S.rotateBtn} onClick={() => rotatePhoto(90)} disabled={busy || downloading} title="rotate right">
                 ↻ Rotate right
               </button>
-              <button style={S.rotateBtn} onClick={flipPhoto} disabled={busy} title="mirror horizontally">
+              <button style={S.rotateBtn} onClick={flipPhoto} disabled={busy || downloading} title="mirror horizontally">
                 🪞 Mirror
               </button>
             </div>
