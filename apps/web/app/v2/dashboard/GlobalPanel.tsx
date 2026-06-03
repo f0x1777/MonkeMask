@@ -3,9 +3,10 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { b64encode } from "../../../lib/v2/bytes";
-import { chapterLabel } from "../../../lib/v2/chapters";
-import { deriveEncKeypair } from "../../../lib/v2/global";
+import { b64decode, b64encode } from "../../../lib/v2/bytes";
+import { CHAPTERS, chapterLabel } from "../../../lib/v2/chapters";
+import { importAesKey, decrypt } from "../../../lib/v2/crypto";
+import { deriveEncKeypair, openSealedSecret } from "../../../lib/v2/global";
 import { MEMBER_ENC_IDENTITY_MESSAGE } from "../../../lib/v2/siws";
 import { useGlobalVault } from "../../../lib/v2/useGlobalVault";
 import { ui } from "../../theme";
@@ -43,6 +44,8 @@ export function GlobalPanel({ role }: { role: string }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [recoverCode, setRecoverCode] = useState("");
+  const [recovering, setRecovering] = useState(false);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/v2/global/stats");
@@ -124,6 +127,56 @@ export function GlobalPanel({ role }: { role: string }) {
     }
   }
 
+  // Break-glass: open a chapter via the recovery grant sealed to you, proving you can
+  // read it even if its ambassadors are gone.
+  async function recover() {
+    setErr(null);
+    setNote(null);
+    if (!signMessage) {
+      setErr("Connect your wallet first.");
+      return;
+    }
+    if (!recoverCode) {
+      setErr("Pick a chapter to recover.");
+      return;
+    }
+    setRecovering(true);
+    try {
+      const sig = await signMessage(new TextEncoder().encode(MEMBER_ENC_IDENTITY_MESSAGE));
+      const enc = await deriveEncKeypair(sig);
+      const { grant, records } = await fetch(`/api/v2/recovery?chapter=${recoverCode}`).then((r) => r.json());
+      if (!grant) {
+        setNote(
+          `No recovery key for ${chapterLabel(recoverCode)} yet — its ambassadors haven't unlocked since you enabled recovery.`,
+        );
+        return;
+      }
+      const ckBytes = openSealedSecret(grant.sealed_key, enc);
+      if (!ckBytes) {
+        setErr("Couldn't open your recovery grant for this chapter.");
+        return;
+      }
+      const key = await importAesKey(ckBytes);
+      let ok = 0;
+      let fail = 0;
+      for (const rec of records as { ciphertext: string; iv: string }[]) {
+        try {
+          await decrypt(key, b64decode(rec.ciphertext), b64decode(rec.iv));
+          ok += 1;
+        } catch {
+          fail += 1;
+        }
+      }
+      setNote(
+        `Recovered ${chapterLabel(recoverCode)}: you hold the chapter key and opened ${ok} record${ok !== 1 ? "s" : ""}${fail ? ` (${fail} unreadable)` : ""}.`,
+      );
+    } catch {
+      setErr("Recovery failed.");
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   return (
     <section style={{ maxWidth: 760, margin: "0 auto", padding: "0 20px 8px", color: ui.ivory }}>
       <h2 style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>Global registry</h2>
@@ -183,6 +236,38 @@ export function GlobalPanel({ role }: { role: string }) {
         {note && <p style={{ color: ui.accent, margin: "8px 0 0" }}>{note}</p>}
         {err && <p style={{ color: "#ff6b6b", margin: "8px 0 0" }}>{err}</p>}
       </div>
+
+      {isGlobalAdmin && (
+        <div style={{ ...box }}>
+          <strong>Break-glass recovery</strong>{" "}
+          <span style={{ color: ui.textDim, fontSize: 13 }}>
+            — open a chapter with the key sealed to you (use if its ambassadors lost access)
+          </span>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={recoverCode}
+              onChange={(e) => setRecoverCode(e.target.value)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: `1px solid ${ui.panelBorder}`,
+                background: "#0d2a17",
+                color: ui.ivory,
+              }}
+            >
+              <option value="">— chapter —</option>
+              {CHAPTERS.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.flag} {c.label}
+                </option>
+              ))}
+            </select>
+            <button onClick={recover} disabled={recovering || !vault.canSign} style={btn}>
+              {recovering ? "Recovering…" : "🔑 Recover chapter"}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
