@@ -14,6 +14,9 @@ export type RosterIntegration = {
   active: boolean; // vault unlocked + this is an ambassador
   match: (embedding: number[]) => { person_id: string; monke: string } | null;
   save: (embedding: number[], monke: string) => Promise<void>;
+  // Optional: also contribute the pairing to the global registry (sealed). Present
+  // only once the global registry has been initialised by a global_admin.
+  promote?: (embedding: number[], monke: string) => Promise<void>;
 };
 
 type Face = { index: number; x: number; y: number; w: number; h: number; thumb: string };
@@ -206,7 +209,10 @@ export function MonkeAnonymizer({ roster }: { roster?: RosterIntegration } = {})
     if (roster?.active) {
       const emb = embeddings[faceIndex];
       const monke = monkes.find((m) => m.id === monkeId)?.thumb;
-      if (emb && monke) void roster.save(emb, monke).catch(() => {});
+      if (emb && monke) {
+        void roster.save(emb, monke).catch(() => {});
+        void roster.promote?.(emb, monke).catch(() => {}); // sealed global contribution
+      }
     }
   }
 

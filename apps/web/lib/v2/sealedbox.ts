@@ -31,6 +31,12 @@ export function generateBoxKeypair(): BoxKeypair {
   return nacl.box.keyPair();
 }
 
+/** Reconstruct the full keypair from just the secret key. A global_admin unwraps the
+ * secret key from their grant, then rebuilds the keypair to open sealed entries. */
+export function keypairFromSecret(secretKey: Uint8Array): BoxKeypair {
+  return nacl.box.keyPair.fromSecretKey(secretKey);
+}
+
 /** Seal a message to a recipient public key. No sender key needed — anonymous. */
 export function seal(message: Uint8Array, recipientPublicKey: Uint8Array): Uint8Array {
   const eph = nacl.box.keyPair();

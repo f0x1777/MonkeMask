@@ -1,12 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { chapterLabel } from "../../../lib/v2/chapters";
+import { sealEntry } from "../../../lib/v2/global";
 import { useVault } from "../../../lib/v2/useVault";
 import { MonkeAnonymizer, type RosterIntegration } from "../../MonkeAnonymizer";
 import { ui } from "../../theme";
 import { AdminPanel } from "./AdminPanel";
+import { GlobalPanel } from "./GlobalPanel";
 import { RosterBar } from "./RosterBar";
 
 // The ambassador dashboard = the full MonkeMask anonymizer, signed-in, with a header
@@ -26,9 +29,33 @@ export function DashboardClient({
   // anonymizer reads it for auto-match/auto-save. Hook is called unconditionally;
   // it's only wired in for ambassadors.
   const vault = useVault();
+  // Ambassadors also seal each pairing to the global registry — but only once a
+  // global_admin has initialised it (so a public key exists to seal against).
+  const [globalPub, setGlobalPub] = useState<string | null>(null);
+  useEffect(() => {
+    if (role !== "ambassador") return;
+    fetch("/api/v2/global/key")
+      .then((r) => r.json())
+      .then((j) => setGlobalPub(j.public_key ?? null))
+      .catch(() => setGlobalPub(null));
+  }, [role]);
+
   const roster: RosterIntegration | undefined =
     role === "ambassador"
-      ? { active: !vault.locked, match: vault.match, save: vault.saveEntry }
+      ? {
+          active: !vault.locked,
+          match: vault.match,
+          save: vault.saveEntry,
+          promote: globalPub
+            ? async (embedding, monke) => {
+                await fetch("/api/v2/global/entries", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ sealed_blob: sealEntry({ embedding, monke }, globalPub) }),
+                });
+              }
+            : undefined,
+        }
       : undefined;
 
   async function signOut() {
@@ -72,6 +99,7 @@ export function DashboardClient({
         </button>
       </header>
       {(role === "super_admin" || role === "global_admin") && <AdminPanel role={role} />}
+      {(role === "super_admin" || role === "global_admin") && <GlobalPanel role={role} />}
       {role === "ambassador" && <RosterBar country={country} vault={vault} />}
       <MonkeAnonymizer roster={roster} />
     </div>

@@ -12,6 +12,11 @@ const enc = new TextEncoder();
 export const KEK_DERIVATION_MESSAGE =
   "MonkeMask v2 — derive my vault key. Only sign this in the official app.";
 
+// A distinct fixed message for the GLOBAL registry key (global_admins only). Separate
+// from the country-vault message so the two KEKs are independent.
+export const GLOBAL_KEK_DERIVATION_MESSAGE =
+  "MonkeMask v2 — derive my GLOBAL registry key. Only sign this in the official app.";
+
 /** Build the canonical SIWS sign-in message. Deterministic given (pubkey, nonce) so
  * the server reconstructs the exact same string it asks the client to sign. */
 export function buildSiwsMessage(pubkey: string, nonce: string): string {
