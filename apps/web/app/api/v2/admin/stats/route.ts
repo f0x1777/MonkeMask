@@ -5,19 +5,22 @@ import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
 
-// GET /api/v2/admin/stats -> per-country roster counts WITHOUT the face data.
-// Selects only the plaintext metadata (country, record_count, updated_at); the
-// encrypted ciphertext column is never read here, so admins see "how many" without
-// "who". super_admin + global_admin only.
+// GET /api/v2/admin/stats -> per-chapter roster counts WITHOUT the face data. Counts
+// rows in encrypted_roster_records (the ciphertext is never read here), so admins see
+// "how many" per chapter without "who". super_admin + global_admin only.
 export async function GET() {
   const session = await requireRole(["super_admin", "global_admin"]);
   if (!session) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const { data } = await supabaseService()
-    .from("encrypted_country_rosters")
-    .select("country,record_count,updated_at")
-    .order("country", { ascending: true });
-
-  const total = (data ?? []).reduce((n, r) => n + (r.record_count ?? 0), 0);
-  return NextResponse.json({ rosters: data ?? [], total });
+  // Pull only the plaintext country column and count per chapter in memory.
+  const { data } = await supabaseService().from("encrypted_roster_records").select("country");
+  const byCountry: Record<string, number> = {};
+  for (const r of data ?? []) {
+    const c = (r as { country: string }).country;
+    byCountry[c] = (byCountry[c] ?? 0) + 1;
+  }
+  const rosters = Object.entries(byCountry)
+    .map(([country, record_count]) => ({ country, record_count }))
+    .sort((a, b) => a.country.localeCompare(b.country));
+  return NextResponse.json({ rosters, total: data?.length ?? 0 });
 }

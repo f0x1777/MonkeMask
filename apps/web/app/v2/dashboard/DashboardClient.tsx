@@ -11,6 +11,7 @@ import { ui } from "../../theme";
 import { AdminPanel } from "./AdminPanel";
 import { GlobalPanel } from "./GlobalPanel";
 import { RosterBar } from "./RosterBar";
+import { RosterManager } from "./RosterManager";
 
 // The ambassador dashboard = the full MonkeMask anonymizer, signed-in, with a header
 // showing the session + a sign-out. Phase 2 layers persistence (save roster, library
@@ -101,6 +102,7 @@ export function DashboardClient({
       {(role === "super_admin" || role === "global_admin") && <AdminPanel role={role} />}
       {(role === "super_admin" || role === "global_admin") && <GlobalPanel role={role} />}
       {role === "ambassador" && <RosterBar country={country} vault={vault} />}
+      {role === "ambassador" && <RosterManager vault={vault} />}
       <MonkeAnonymizer roster={roster} />
     </div>
   );

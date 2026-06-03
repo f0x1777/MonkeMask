@@ -6,32 +6,43 @@ import { useCallback, useRef, useState } from "react";
 import { b64decode, b64encode } from "./bytes";
 import { decrypt, encrypt, generateKeyBytes, importAesKey } from "./crypto";
 import { deriveEncKeypair, openSealedSecret, sealSecretToAdmin } from "./global";
-import { emptyRoster, findMatch, upsertEntry, type Roster, type RosterEntry } from "./roster";
+import { emptyRoster, findMatch, type Roster, type RosterEntry } from "./roster";
 import { MEMBER_ENC_IDENTITY_MESSAGE } from "./siws";
 
 export type VaultApi = {
   unlock: () => Promise<void>;
   saveEntry: (embedding: number[], monke: string) => Promise<void>;
+  resetEntry: (personId: string) => Promise<void>;
   match: (embedding: number[]) => RosterEntry | null;
   enrollPending: () => Promise<number>;
+  entries: { person_id: string; monke: string }[];
   busy: boolean;
   locked: boolean;
-  pending: boolean; // unlocked attempt but not yet granted access to the chapter
+  pending: boolean;
   count: number;
   canUnlock: boolean;
 };
 
-// The chapter vault, multi-holder. One signature derives the ambassador's encryption
-// identity; the chapter key (CK) is SEALED to it, so every ambassador of the chapter
-// shares one roster. The first ambassador initialises (CK sealed to self); later ones
-// register and wait for an existing holder to enroll them. CK lives only in memory.
+// The chapter vault, multi-holder + per-record. One signature derives the ambassador's
+// encryption identity; the chapter key (CK) is sealed to it (shared across the chapter's
+// ambassadors). Each face<->monke is its own encrypted ROW, so concurrent saves don't
+// clobber and a single person can be reset. CK lives only in memory.
 export function useVault(): VaultApi {
   const { signMessage } = useWallet();
   const [ck, setCk] = useState<CryptoKey | null>(null);
-  const ckBytesRef = useRef<Uint8Array | null>(null); // raw CK, needed to seal to others
-  const [roster, setRoster] = useState<Roster | null>(null);
+  const ckBytesRef = useRef<Uint8Array | null>(null); // raw CK, to seal to chapter mates
+  // rosterRef is the authoritative, always-current roster; state mirrors it for render.
+  // Reading the ref (not a closed-over state value) is what prevents rapid saves from
+  // each starting from a stale snapshot.
+  const rosterRef = useRef<Roster>(emptyRoster());
+  const [, forceRender] = useState(0);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
+
+  const setRoster = useCallback((next: Roster) => {
+    rosterRef.current = next;
+    forceRender((n) => n + 1);
+  }, []);
 
   const deriveIdentity = useCallback(async () => {
     if (!signMessage) throw new Error("wallet_not_connected");
@@ -47,15 +58,24 @@ export function useVault(): VaultApi {
     });
   }, []);
 
-  const loadRoster = useCallback(async (key: CryptoKey) => {
-    const blob = (await fetch("/api/v2/roster").then((r) => r.json())).roster;
-    if (blob) {
-      const plain = await decrypt(key, b64decode(blob.ciphertext), b64decode(blob.iv));
-      setRoster(JSON.parse(new TextDecoder().decode(plain)));
-    } else {
-      setRoster(emptyRoster());
-    }
-  }, []);
+  const loadRoster = useCallback(
+    async (key: CryptoKey) => {
+      const records: { id: string; person_id: string; ciphertext: string; iv: string }[] =
+        (await fetch("/api/v2/roster/records").then((r) => r.json())).records ?? [];
+      const entries: RosterEntry[] = [];
+      for (const r of records) {
+        try {
+          const plain = await decrypt(key, b64decode(r.ciphertext), b64decode(r.iv));
+          const { embedding, monke } = JSON.parse(new TextDecoder().decode(plain));
+          entries.push({ person_id: r.person_id, embedding, monke });
+        } catch {
+          /* skip an unreadable record */
+        }
+      }
+      setRoster({ version: 1, entries });
+    },
+    [setRoster],
+  );
 
   const unlock = useCallback(async () => {
     setBusy(true);
@@ -72,7 +92,6 @@ export function useVault(): VaultApi {
         setCk(key);
         await loadRoster(key);
       } else if (!initialised) {
-        // First ambassador of the chapter: generate the CK, seal it to yourself.
         await registerIdentity(enc.publicKey);
         const bytes = generateKeyBytes();
         const sealed = sealSecretToAdmin(bytes, b64encode(enc.publicKey));
@@ -86,7 +105,6 @@ export function useVault(): VaultApi {
         setCk(await importAesKey(bytes));
         setRoster(emptyRoster());
       } else {
-        // Chapter exists but you have no grant yet — register and wait for enrollment.
         await registerIdentity(enc.publicKey);
         setPending(true);
         throw new Error("pending_enrollment");
@@ -94,42 +112,46 @@ export function useVault(): VaultApi {
     } finally {
       setBusy(false);
     }
-  }, [deriveIdentity, registerIdentity, loadRoster]);
+  }, [deriveIdentity, registerIdentity, loadRoster, setRoster]);
 
-  const persist = useCallback(
-    async (next: Roster) => {
-      if (!ck) throw new Error("locked");
-      const { iv, ciphertext } = await encrypt(ck, new TextEncoder().encode(JSON.stringify(next)));
-      await fetch("/api/v2/roster", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ciphertext: b64encode(ciphertext),
-          iv: b64encode(iv),
-          record_count: next.entries.length,
-        }),
-      });
-    },
-    [ck],
-  );
-
+  // Save one face<->monke as its own encrypted row. Reads rosterRef (current) to find a
+  // matching known person, so saves never start from a stale snapshot and never clobber.
   const saveEntry = useCallback(
     async (embedding: number[], monke: string) => {
-      if (!ck || !roster) throw new Error("locked");
-      const entry: RosterEntry = { person_id: crypto.randomUUID(), embedding, monke };
-      const next = upsertEntry(roster, entry);
-      setRoster(next);
-      await persist(next);
+      if (!ck) throw new Error("locked");
+      const cur = rosterRef.current;
+      const matched = findMatch(embedding, cur);
+      const personId = matched?.person_id ?? crypto.randomUUID();
+      const next: Roster = {
+        version: 1,
+        entries: [...cur.entries.filter((e) => e.person_id !== personId), { person_id: personId, embedding, monke }],
+      };
+      setRoster(next); // optimistic + makes the personId visible to the next save
+      const { iv, ciphertext } = await encrypt(ck, new TextEncoder().encode(JSON.stringify({ embedding, monke })));
+      await fetch("/api/v2/roster/records", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ person_id: personId, ciphertext: b64encode(ciphertext), iv: b64encode(iv) }),
+      });
     },
-    [ck, roster, persist],
+    [ck, setRoster],
+  );
+
+  // Reset a person (sold/changed their monke): delete their record everywhere.
+  const resetEntry = useCallback(
+    async (personId: string) => {
+      const cur = rosterRef.current;
+      setRoster({ version: 1, entries: cur.entries.filter((e) => e.person_id !== personId) });
+      await fetch(`/api/v2/roster/records?person_id=${encodeURIComponent(personId)}`, { method: "DELETE" });
+    },
+    [setRoster],
   );
 
   const match = useCallback(
-    (embedding: number[]) => (roster ? findMatch(embedding, roster) : null),
-    [roster],
+    (embedding: number[]) => findMatch(embedding, rosterRef.current),
+    [],
   );
 
-  // Seal the CK to every pending ambassador of this chapter (so they share the roster).
   const enrollPending = useCallback(async (): Promise<number> => {
     const bytes = ckBytesRef.current;
     if (!bytes) throw new Error("locked");
@@ -149,15 +171,18 @@ export function useVault(): VaultApi {
     return (await r.json()).granted ?? grants.length;
   }, []);
 
+  const roster = rosterRef.current;
   return {
     unlock,
     saveEntry,
+    resetEntry,
     match,
     enrollPending,
+    entries: roster.entries.map((e) => ({ person_id: e.person_id, monke: e.monke })),
     busy,
     locked: ck === null,
     pending,
-    count: roster?.entries.length ?? 0,
+    count: roster.entries.length,
     canUnlock: !!signMessage,
   };
 }
