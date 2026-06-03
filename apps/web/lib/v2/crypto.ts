@@ -34,6 +34,20 @@ export async function deriveKEK(signature: Uint8Array): Promise<CryptoKey> {
   );
 }
 
+/** Deterministically derive raw bytes from a wallet signature via HKDF-SHA256. Used to
+ * seed a stable X25519 box keypair (the global_admin's "encryption identity"): the same
+ * signature always yields the same bytes, so the admin re-derives it by re-signing. The
+ * `info` separates this domain from the KEK so the two derivations never collide. */
+export async function deriveBytes(signature: Uint8Array, info: string, length = 32): Promise<Uint8Array> {
+  const base = await subtle.importKey("raw", signature, "HKDF", false, ["deriveBits"]);
+  const bits = await subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: KEK_SALT, info: enc.encode(info) },
+    base,
+    length * 8,
+  );
+  return new Uint8Array(bits);
+}
+
 /** A fresh random AES-256-GCM data key (a per-country CK or the global GK).
  * Extractable so it can be wrapped by a KEK. */
 export async function generateDataKey(): Promise<CryptoKey> {
@@ -55,23 +69,14 @@ export async function wrapKey(
  *
  * The unwrapped key is NON-extractable: it can encrypt/decrypt but its raw bytes can
  * never be exported (so XSS holding the in-memory CryptoKey still can't exfiltrate the
- * country key). Use ``unwrapKeyExtractable`` only where the raw bytes are needed. */
+ * country key). The global registry secret never uses this path — it's raw nacl bytes
+ * distributed via sealed boxes, not a wrapped WebCrypto key. */
 export async function unwrapKey(
   kek: CryptoKey,
   wrapped: Uint8Array,
   iv: Uint8Array,
 ): Promise<CryptoKey> {
   return unwrapKeyInternal(kek, wrapped, iv, false);
-}
-
-/** Like ``unwrapKey`` but the result is extractable. Used only for the global box
- * secret key, whose raw 32 bytes must be exported to rebuild the nacl keypair. */
-export async function unwrapKeyExtractable(
-  kek: CryptoKey,
-  wrapped: Uint8Array,
-  iv: Uint8Array,
-): Promise<CryptoKey> {
-  return unwrapKeyInternal(kek, wrapped, iv, true);
 }
 
 function unwrapKeyInternal(

@@ -37,6 +37,7 @@ export function GlobalPanel({ role }: { role: string }) {
   const vault = useGlobalVault();
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/v2/global/stats");
@@ -60,17 +61,35 @@ export function GlobalPanel({ role }: { role: string }) {
 
   async function unlock() {
     setErr(null);
+    setNote(null);
     try {
       await vault.unlock();
     } catch (e) {
       const m = (e as Error).message;
-      setErr(
-        m === "no_grant"
-          ? "Your wallet isn't enrolled to read the global registry yet."
-          : m === "wallet_not_connected"
+      if (m === "pending_enrollment") {
+        setNote(
+          "Your identity is registered. Ask an already-enrolled global admin to grant you read access, then unlock again.",
+        );
+      } else {
+        setErr(
+          m === "wallet_not_connected"
             ? "Connect your wallet first."
-            : "Couldn't unlock the global registry.",
-      );
+            : m === "grant_unreadable"
+              ? "Your grant couldn't be opened (it may need re-issuing)."
+              : "Couldn't unlock the global registry.",
+        );
+      }
+    }
+  }
+
+  async function enroll() {
+    setErr(null);
+    setNote(null);
+    try {
+      const n = await vault.enrollPending();
+      setNote(n === 0 ? "No admins are waiting for access." : `Granted access to ${n} admin${n > 1 ? "s" : ""}.`);
+    } catch {
+      setErr("Couldn't grant pending admins.");
     }
   }
 
@@ -107,16 +126,22 @@ export function GlobalPanel({ role }: { role: string }) {
                 {vault.busy ? "Unlocking…" : "🔓 Unlock & read"}
               </button>
             ) : (
-              <span style={{ fontSize: 14 }}>
-                🔓 Unlocked · read access verified on <strong>{vault.openedCount}</strong>{" "}
-                {vault.openedCount === 1 ? "entry" : "entries"}
-                {vault.failedCount > 0 && (
-                  <span style={{ color: "#ff6b6b" }}> · ⚠️ {vault.failedCount} unreadable</span>
-                )}
-              </span>
+              <>
+                <span style={{ fontSize: 14 }}>
+                  🔓 Unlocked · read access verified on <strong>{vault.openedCount}</strong>{" "}
+                  {vault.openedCount === 1 ? "entry" : "entries"}
+                  {vault.failedCount > 0 && (
+                    <span style={{ color: "#ff6b6b" }}> · ⚠️ {vault.failedCount} unreadable</span>
+                  )}
+                </span>
+                <button onClick={enroll} disabled={vault.busy} style={{ ...btn, marginLeft: "auto" }}>
+                  {vault.busy ? "Granting…" : "👥 Grant pending admins"}
+                </button>
+              </>
             )}
           </div>
         )}
+        {note && <p style={{ color: ui.accent, margin: "8px 0 0" }}>{note}</p>}
         {err && <p style={{ color: "#ff6b6b", margin: "8px 0 0" }}>{err}</p>}
       </div>
     </section>

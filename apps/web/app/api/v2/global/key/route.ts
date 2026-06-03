@@ -6,9 +6,9 @@ import { supabaseService } from "../../../../../lib/v2/supabase-server";
 export const runtime = "nodejs";
 
 // The global registry key. The PUBLIC key is readable by ambassadors (to seal writes)
-// and global_admins; the wrapped SECRET grant is returned only to the global_admin it
-// belongs to. A secret never lands here in plaintext — only the public half + each
-// admin's own wallet-wrapped copy.
+// and global_admins; a global_admin's grant is the global secret SEALED to their own
+// encryption identity — returned only to that admin, opened only by re-deriving their
+// identity. A secret never lands here in plaintext.
 
 export async function GET() {
   const s = await requireRole(["ambassador", "global_admin"]);
@@ -20,11 +20,11 @@ export async function GET() {
     .eq("id", 1)
     .maybeSingle();
 
-  let grant: { wrapped_secret: string; iv: string } | null = null;
+  let grant: { sealed_secret: string } | null = null;
   if (s.role === "global_admin") {
     const { data } = await db
       .from("global_key_grants")
-      .select("wrapped_secret,iv")
+      .select("sealed_secret")
       .eq("global_admin_wallet", s.wallet_pubkey)
       .maybeSingle();
     grant = data ?? null;
@@ -32,18 +32,14 @@ export async function GET() {
   return NextResponse.json({ public_key: key?.box_public_key ?? null, grant });
 }
 
-// Initialise the registry: the first global_admin generates the keypair client-side and
-// posts the public key + their own wrapped secret. Idempotent-guarded: once a key
-// exists, re-init is refused (additional admins enroll via the handshake — follow-up).
+// Initialise the registry: the first global_admin generates the box keypair client-side
+// and posts the public key + the secret sealed to their OWN encryption identity. Once a
+// key exists, re-init is refused (additional admins are enrolled via /global/grants).
 export async function POST(req: Request) {
   const s = await requireRole(["global_admin"]);
   if (!s) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
-  if (
-    typeof body.box_public_key !== "string" ||
-    typeof body.wrapped_secret !== "string" ||
-    typeof body.iv !== "string"
-  ) {
+  if (typeof body.box_public_key !== "string" || typeof body.sealed_secret !== "string") {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
   const db = supabaseService();
@@ -56,11 +52,10 @@ export async function POST(req: Request) {
   if (keyErr) return NextResponse.json({ error: "init_failed" }, { status: 400 });
 
   // The self-grant is what makes the registry readable. If it fails, roll back the key
-  // row so init can be retried cleanly (otherwise we'd have an unreadable registry).
+  // row so init can be retried cleanly.
   const { error: grantErr } = await db.from("global_key_grants").insert({
     global_admin_wallet: s.wallet_pubkey,
-    wrapped_secret: body.wrapped_secret,
-    iv: body.iv,
+    sealed_secret: body.sealed_secret,
     granted_by: s.wallet_pubkey,
   });
   if (grantErr) {

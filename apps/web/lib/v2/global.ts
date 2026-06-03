@@ -1,23 +1,38 @@
-// Global registry crypto: ambassadors SEAL {embedding, monke} to the global box
-// public key (write-only); global_admins hold the secret key (wrapped per-wallet under
-// their KEK) and OPEN it. Pure functions (no React); the hook in ./useGlobalVault wires
-// these to the network. A secret never lands on-chain — the wrap is the custody.
+// Global registry crypto.
+//
+// Two layers of anonymous public-key encryption (nacl.box sealed boxes):
+//   1. Ambassadors SEAL {embedding, monke} to the GLOBAL box public key (write-only).
+//   2. The global box SECRET key is itself SEALED to each global_admin's "encryption
+//      identity" public key — a stable X25519 keypair the admin derives from a wallet
+//      signature. So distributing read access to a new admin is just "seal the secret
+//      to their registered pubkey": no handshake, and the super_admin never holds it.
+//
+// Pure functions (no React); the hook in ./useGlobalVault wires them to the network.
 
 import { b64decode, b64encode } from "./bytes";
-import { unwrapKeyExtractable, wrapKey } from "./crypto";
-import { generateBoxKeypair, seal, sealOpen, type BoxKeypair } from "./sealedbox";
-
-const subtle = globalThis.crypto.subtle;
+import { deriveBytes } from "./crypto";
+import { generateBoxKeypair, keypairFromSecret, seal, sealOpen, type BoxKeypair } from "./sealedbox";
 
 export type GlobalEntry = { embedding: number[]; monke: string };
 
-/** Fresh global box keypair (run once, by the global_admin who initialises). */
+// HKDF domain for the admin encryption identity (kept distinct from the country KEK).
+const ENC_IDENTITY_INFO = "monkemask-v2/global-admin-enc-identity/v1";
+
+/** Fresh global box keypair (generated once, by the global_admin who initialises). */
 export function newGlobalKeypair(): BoxKeypair {
   return generateBoxKeypair();
 }
 
-/** Seal an entry to the global public key (base64). Returns base64. Anyone can do
- * this; only the secret-key holder can open it. */
+/** Derive a global_admin's stable X25519 "encryption identity" from a wallet signature.
+ * Deterministic: re-signing yields the same keypair, so the admin can always re-open
+ * grants sealed to their published public key. */
+export async function deriveEncKeypair(signature: Uint8Array): Promise<BoxKeypair> {
+  const seed = await deriveBytes(signature, ENC_IDENTITY_INFO, 32);
+  return keypairFromSecret(seed);
+}
+
+/** Seal an entry to the global public key (base64). Returns base64. Anyone can do this;
+ * only the secret-key holder can open it. */
 export function sealEntry(entry: GlobalEntry, boxPublicKeyB64: string): string {
   const msg = new TextEncoder().encode(JSON.stringify(entry));
   return b64encode(seal(msg, b64decode(boxPublicKeyB64)));
@@ -35,22 +50,14 @@ export function openEntry(sealedB64: string, keypair: BoxKeypair): GlobalEntry |
   }
 }
 
-// The KEK's only privileges are wrapKey/unwrapKey (least privilege). The nacl secret
-// is 32 raw bytes, so we import it as a raw AES key and wrap it with the same audited
-// envelope primitive the country key uses — no need to broaden the KEK to encrypt/decrypt.
-
-/** Wrap the global secret key under a global_admin's wallet KEK. */
-export async function wrapSecret(
-  kek: CryptoKey,
-  secretKey: Uint8Array,
-): Promise<{ wrapped: string; iv: string }> {
-  const asKey = await subtle.importKey("raw", secretKey, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-  const { iv, wrapped } = await wrapKey(kek, asKey);
-  return { wrapped: b64encode(wrapped), iv: b64encode(iv) };
+/** Seal the global box SECRET key to a global_admin's encryption public key (base64),
+ * producing that admin's grant. Only they (re-deriving their identity) can open it. */
+export function sealSecretToAdmin(globalSecretKey: Uint8Array, adminEncPublicKeyB64: string): string {
+  return b64encode(seal(globalSecretKey, b64decode(adminEncPublicKeyB64)));
 }
 
-/** Unwrap the global secret key with the wallet KEK. Throws on a wrong KEK. */
-export async function unwrapSecret(kek: CryptoKey, wrappedB64: string, ivB64: string): Promise<Uint8Array> {
-  const key = await unwrapKeyExtractable(kek, b64decode(wrappedB64), b64decode(ivB64));
-  return new Uint8Array(await subtle.exportKey("raw", key));
+/** Open a sealed grant with the admin's encryption keypair → the global box secret key.
+ * Returns null if the grant wasn't sealed to this identity. */
+export function openSealedSecret(sealedSecretB64: string, encKeypair: BoxKeypair): Uint8Array | null {
+  return sealOpen(b64decode(sealedSecretB64), encKeypair);
 }
