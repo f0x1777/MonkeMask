@@ -611,16 +611,22 @@ export default function Home() {
                       />
                       {sel && (
                         <>
-                          {/* rotate: handle floats above the monke on a short stem */}
-                          <span style={S.rotateStem} />
-                          <span
+                          {/* rotate: handle floats above the monke on a short stem.
+                              Buttons (not spans) so the handles are focusable + named;
+                              keyboard users have the ⟲／⟳ and －／＋ buttons below. */}
+                          <span style={S.rotateStem} aria-hidden />
+                          <button
+                            type="button"
                             onMouseDown={(e) => onMonkeRotateDown(it, e)}
+                            aria-label="Rotate this monke by dragging"
                             title="drag to rotate"
                             style={S.rotateHandle}
                           />
                           {/* resize: handle at the bottom-right corner */}
-                          <span
+                          <button
+                            type="button"
                             onMouseDown={(e) => onMonkeResizeDown(it, e)}
+                            aria-label="Resize this monke by dragging"
                             title="drag to resize"
                             style={S.resizeHandle}
                           />
@@ -991,6 +997,9 @@ const S: Record<string, any> = {
     width: 18,
     height: 18,
     marginLeft: -9,
+    padding: 0,
+    boxSizing: "border-box",
+    appearance: "none",
     borderRadius: "50%",
     background: ui.accent,
     border: "2px solid #fff",
@@ -1015,6 +1024,9 @@ const S: Record<string, any> = {
     bottom: -9,
     width: 18,
     height: 18,
+    padding: 0,
+    boxSizing: "border-box",
+    appearance: "none",
     borderRadius: 5,
     background: ui.accent,
     border: "2px solid #fff",
