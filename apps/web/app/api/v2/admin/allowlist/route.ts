@@ -40,3 +40,48 @@ export async function POST(req: Request) {
   });
   return NextResponse.json({ ok: true });
 }
+
+// DELETE /api/v2/admin/allowlist { wallet_pubkey, force? } -> deactivate (set removed_at).
+// Guards against removing the LAST active ambassador of a chapter unless force=true
+// (you'd have no day-to-day holder; a global admin could still recover). After removal a
+// remaining holder must Re-key to cryptographically revoke the removed member.
+export async function DELETE(req: Request) {
+  const session = await requireRole(["super_admin"]);
+  if (!session) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const body = await req.json().catch(() => ({}));
+  const wallet = body.wallet_pubkey;
+  if (typeof wallet !== "string") return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+
+  const db = supabaseService();
+  const { data: entry } = await db
+    .from("allowlist")
+    .select("role,country,removed_at")
+    .eq("wallet_pubkey", wallet)
+    .maybeSingle();
+  if (!entry || entry.removed_at) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (entry.role === "super_admin") {
+    return NextResponse.json({ error: "cannot_remove_super_admin" }, { status: 400 });
+  }
+
+  if (entry.role === "ambassador" && entry.country && body.force !== true) {
+    const { data: others } = await db
+      .from("allowlist")
+      .select("wallet_pubkey")
+      .eq("role", "ambassador")
+      .eq("country", entry.country)
+      .is("removed_at", null)
+      .neq("wallet_pubkey", wallet);
+    if ((others?.length ?? 0) === 0) {
+      return NextResponse.json({ error: "last_ambassador" }, { status: 409 });
+    }
+  }
+
+  await db.from("allowlist").update({ removed_at: new Date().toISOString() }).eq("wallet_pubkey", wallet);
+  await db.from("audit_log").insert({
+    action: "allowlist.remove",
+    actor_wallet: session.wallet_pubkey,
+    target_country: entry.country,
+    metadata: { removed: wallet, role: entry.role },
+  });
+  return NextResponse.json({ ok: true });
+}

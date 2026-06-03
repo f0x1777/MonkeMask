@@ -91,6 +91,30 @@ export function AdminPanel({ role }: { role: string }) {
 
   const short = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
 
+  async function remove(wallet: string, force = false) {
+    const r = await fetch("/api/v2/admin/allowlist", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallet_pubkey: wallet, force }),
+    });
+    if (r.ok) {
+      await load();
+      return;
+    }
+    const e = await r.json().catch(() => ({}));
+    if (e.error === "last_ambassador") {
+      if (
+        confirm(
+          "This is the last active ambassador of the chapter. Remove anyway? A global admin could still recover it, but ideally add a replacement first.",
+        )
+      ) {
+        await remove(wallet, true);
+      }
+    } else {
+      setMsg(e.error === "cannot_remove_super_admin" ? "Can't remove a super admin." : "Couldn't remove the wallet.");
+    }
+  }
+
   return (
     <section style={{ maxWidth: 760, margin: "0 auto", padding: "0 20px 40px", color: ui.ivory }}>
       <h2 style={{ fontSize: 20, fontWeight: 800, marginTop: 28 }}>Admin</h2>
@@ -172,11 +196,32 @@ export function AdminPanel({ role }: { role: string }) {
               {entries.map((e) => (
                 <div
                   key={e.wallet_pubkey}
-                  style={{ display: "flex", gap: 10, padding: "4px 0", opacity: e.removed_at ? 0.4 : 1 }}
+                  style={{ display: "flex", gap: 10, padding: "4px 0", alignItems: "center", opacity: e.removed_at ? 0.4 : 1 }}
                 >
                   <span style={{ fontFamily: "monospace" }}>{short(e.wallet_pubkey)}</span>
                   <span style={{ color: ui.accent }}>{e.role}</span>
                   {e.country && <span style={{ color: ui.textDim }}>{chapterLabel(e.country)}</span>}
+                  {e.removed_at ? (
+                    <span style={{ color: ui.textDim, marginLeft: "auto", fontSize: 12 }}>removed</span>
+                  ) : (
+                    e.role !== "super_admin" && (
+                      <button
+                        onClick={() => remove(e.wallet_pubkey)}
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 12,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${ui.panelBorder}`,
+                          background: "transparent",
+                          color: "#ff8a8a",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )
+                  )}
                 </div>
               ))}
             </div>

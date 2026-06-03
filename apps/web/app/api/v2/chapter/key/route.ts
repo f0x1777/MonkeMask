@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { b64decode } from "../../../../../lib/v2/bytes";
+import {
+  chapterScope as scopeFor,
+  entitledHolders,
+  isValidSealedKey,
+} from "../../../../../lib/v2/chapter-server";
 import { requireRole } from "../../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
@@ -11,20 +15,6 @@ export const runtime = "nodejs";
 // chapter is initialised + the caller's own sealed grant, and lets the first ambassador
 // initialise it (atomically, via the scope_keys PK).
 
-function scopeFor(country: string) {
-  return `chapter:${country}`;
-}
-
-// A nacl sealed box of a 32-byte key is 32+32+16 = 80 bytes -> 108 base64 chars.
-function isValidSealedKey(s: unknown): s is string {
-  if (typeof s !== "string" || s.length > 120) return false;
-  try {
-    return b64decode(s).length === 80;
-  } catch {
-    return false;
-  }
-}
-
 export async function GET() {
   const s = await requireRole(["ambassador"]);
   if (!s || !s.country) return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -32,15 +22,23 @@ export async function GET() {
   const scope = scopeFor(s.country);
 
   const { data: marker } = await db.from("scope_keys").select("scope").eq("scope", scope).maybeSingle();
-  const { data: mine } = await db
+  const { data: grants } = await db
     .from("scoped_key_grants")
-    .select("sealed_key")
+    .select("wallet_pubkey,sealed_key")
     .eq("scope", scope)
-    .eq("wallet_pubkey", s.wallet_pubkey)
-    .is("superseded_at", null)
-    .maybeSingle();
+    .is("superseded_at", null);
+  const mine = (grants ?? []).find((g) => g.wallet_pubkey === s.wallet_pubkey) ?? null;
 
-  return NextResponse.json({ initialised: marker != null, grant: mine ?? null });
+  // A re-key is needed when an active grant is held by a wallet that is no longer an
+  // entitled holder (a removed member still cryptographically holds the CK).
+  const holders = await entitledHolders(db, s.country);
+  const needsRekey = (grants ?? []).some((g) => !holders.has(g.wallet_pubkey));
+
+  return NextResponse.json({
+    initialised: marker != null,
+    grant: mine ? { sealed_key: mine.sealed_key } : null,
+    needs_rekey: needsRekey,
+  });
 }
 
 // First ambassador of the chapter: seal the freshly generated CK to themselves. The

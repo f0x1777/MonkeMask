@@ -90,6 +90,17 @@ export function RosterBar({
     }
   }
 
+  async function rekey() {
+    setErr(null);
+    setNote(null);
+    try {
+      await vault.rekey();
+      setNote("Re-keyed — the removed member can no longer read the roster.");
+    } catch {
+      setErr("Couldn't re-key the chapter.");
+    }
+  }
+
   if (consent === null) return null; // loading
 
   if (!consent) {
@@ -126,6 +137,16 @@ export function RosterBar({
           <button onClick={enroll} disabled={vault.busy} style={btn} title="grant chapter mates who are waiting">
             👥 Grant pending
           </button>
+          {vault.needsRekey && (
+            <button
+              onClick={rekey}
+              disabled={vault.busy}
+              style={{ ...btn, background: "#b3541e" }}
+              title="a member was removed — rotate the key to revoke them"
+            >
+              ⚠️ Re-key now
+            </button>
+          )}
         </>
       )}
       {note && <p style={{ width: "100%", color: ui.accent, margin: "4px 0 0" }}>{note}</p>}

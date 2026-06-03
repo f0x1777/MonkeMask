@@ -35,10 +35,12 @@ export type VaultApi = {
   resetEntry: (personId: string) => Promise<void>;
   match: (embedding: number[]) => RosterEntry | null;
   enrollPending: () => Promise<number>;
+  rekey: () => Promise<void>;
   entries: { person_id: string; monke: string }[];
   busy: boolean;
   locked: boolean;
   pending: boolean;
+  needsRekey: boolean; // a removed member still holds an active grant — rotate the CK
   count: number;
   canUnlock: boolean;
 };
@@ -58,6 +60,7 @@ export function useVault(): VaultApi {
   const [, forceRender] = useState(0);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
+  const [needsRekey, setNeedsRekey] = useState(false);
 
   const setRoster = useCallback((next: Roster) => {
     rosterRef.current = next;
@@ -102,7 +105,8 @@ export function useVault(): VaultApi {
     setPending(false);
     try {
       const enc = await deriveIdentity();
-      const { initialised, grant } = await fetch("/api/v2/chapter/key").then((r) => r.json());
+      const { initialised, grant, needs_rekey } = await fetch("/api/v2/chapter/key").then((r) => r.json());
+      setNeedsRekey(!!needs_rekey);
 
       if (grant) {
         const bytes = openSealedSecret(grant.sealed_key, enc);
@@ -184,6 +188,43 @@ export function useVault(): VaultApi {
     return sealCkToPending(bytes);
   }, []);
 
+  // Rotate the CK to revoke a removed member: new CK, re-encrypt every record under it,
+  // re-seal it to every REMAINING entitled holder, applied atomically server-side. The
+  // removed member's old grant + old CK can no longer read the re-encrypted records.
+  const rekey = useCallback(async () => {
+    const oldBytes = ckBytesRef.current;
+    if (!oldBytes) throw new Error("locked");
+    const cur = rosterRef.current;
+    const newCk = generateKeyBytes();
+    const newKey = await importAesKey(newCk);
+
+    const records: { person_id: string; ciphertext: string; iv: string }[] = [];
+    for (const e of cur.entries) {
+      const { iv, ciphertext } = await encrypt(
+        newKey,
+        new TextEncoder().encode(JSON.stringify({ embedding: e.embedding, monke: e.monke })),
+      );
+      records.push({ person_id: e.person_id, ciphertext: b64encode(ciphertext), iv: b64encode(iv) });
+    }
+
+    const holders: { wallet_pubkey: string; enc_public_key: string }[] =
+      (await fetch("/api/v2/chapter/grants").then((r) => r.json())).holders ?? [];
+    const grants = holders.map((h) => ({
+      wallet_pubkey: h.wallet_pubkey,
+      sealed_key: sealSecretToAdmin(newCk, h.enc_public_key),
+    }));
+
+    const r = await fetch("/api/v2/chapter/rekey", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ grants, records }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "rekey_failed");
+    ckBytesRef.current = newCk;
+    setCk(newKey);
+    setNeedsRekey(false);
+  }, []);
+
   const roster = rosterRef.current;
   return {
     unlock,
@@ -191,10 +232,12 @@ export function useVault(): VaultApi {
     resetEntry,
     match,
     enrollPending,
+    rekey,
     entries: roster.entries.map((e) => ({ person_id: e.person_id, monke: e.monke })),
     busy,
     locked: ck === null,
     pending,
+    needsRekey,
     count: roster.entries.length,
     canUnlock: !!signMessage,
   };

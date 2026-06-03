@@ -1,53 +1,19 @@
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { b64decode } from "../../../../../lib/v2/bytes";
+import {
+  chapterScope as scopeFor,
+  entitledHolders,
+  isChapterAmbassador,
+  isValidSealedKey,
+} from "../../../../../lib/v2/chapter-server";
 import { requireRole } from "../../../../../lib/v2/require-role";
 import { supabaseService } from "../../../../../lib/v2/supabase-server";
 
 export const runtime = "nodejs";
 
-// A nacl sealed box of a 32-byte CK is 80 bytes -> 108 base64 chars.
-function isValidSealedKey(s: unknown): s is string {
-  if (typeof s !== "string" || s.length > 120) return false;
-  try {
-    return b64decode(s).length === 80;
-  } catch {
-    return false;
-  }
-}
-
 // Enrollment for a chapter. An already-enrolled, still-active chapter ambassador seals
 // the CK to each pending ambassador of the same chapter. Mirrors the global enrollment
 // hardening: active-allowlist self-check + insert-only (no clobbering a peer's grant).
-
-function scopeFor(country: string) {
-  return `chapter:${country}`;
-}
-
-// Wallets entitled to hold this chapter's CK: the chapter's own active ambassadors PLUS
-// active global_admins (the recovery / break-glass tier — they can already read every
-// chapter's associations via the global registry, so holding the CK adds no exposure).
-async function entitledHolders(db: SupabaseClient, country: string): Promise<Set<string>> {
-  const [{ data: amb }, { data: admins }] = await Promise.all([
-    db.from("allowlist").select("wallet_pubkey").eq("role", "ambassador").eq("country", country).is("removed_at", null),
-    db.from("allowlist").select("wallet_pubkey").eq("role", "global_admin").is("removed_at", null),
-  ]);
-  return new Set([...(amb ?? []), ...(admins ?? [])].map((a) => a.wallet_pubkey));
-}
-
-// Whether a wallet is an active ambassador OF THIS chapter (only these may issue grants).
-async function isChapterAmbassador(db: SupabaseClient, country: string, wallet: string): Promise<boolean> {
-  const { data } = await db
-    .from("allowlist")
-    .select("wallet_pubkey")
-    .eq("role", "ambassador")
-    .eq("country", country)
-    .eq("wallet_pubkey", wallet)
-    .is("removed_at", null)
-    .maybeSingle();
-  return !!data;
-}
 
 export async function GET() {
   const s = await requireRole(["ambassador"]);
@@ -68,7 +34,9 @@ export async function GET() {
   ]);
   const granted = new Set((grants ?? []).map((g) => g.wallet_pubkey));
   const pending = (ids ?? []).filter((i) => !granted.has(i.wallet_pubkey));
-  return NextResponse.json({ pending });
+  // `holders` = every entitled holder with a registered identity (granted or not); the
+  // re-key flow seals the new CK to all of them.
+  return NextResponse.json({ pending, holders: ids ?? [] });
 }
 
 export async function POST(req: Request) {
