@@ -283,6 +283,44 @@ cost of maintaining two stores outweighs any benefit.
 
 ---
 
+## Addendum — Global registry (sealed box) and why the key is not on-chain
+
+The global registry lets ambassadors WRITE face↔monke associations that only
+global_admins can READ. We use an anonymous public-key sealed box (nacl.box,
+X25519 + XSalsa20-Poly1305):
+
+- One global box keypair. The PUBLIC key is published; any authenticated
+  ambassador seals `{embedding, monke cutout}` to it and inserts the ciphertext.
+  Sealing needs no secret, so ambassadors contribute without ever being able to
+  read the registry.
+- The SECRET key is held only by global_admins. Each admin's copy is wrapped
+  (AES-256-GCM) under a KEK derived from their wallet signature over a dedicated
+  message (`GLOBAL_KEK_DERIVATION_MESSAGE`) — the same envelope pattern as the
+  country vault, so "vault access with that key" is literally a wallet signature.
+
+**Why not on-chain?** A secret cannot live on-chain — all on-chain data is
+public, so an on-chain private key would be world-readable. On-chain can only
+ever hold the *public* half and, optionally, the *membership set* (which wallets
+are global_admins) as a tamper-evident allowlist. That is a possible future
+hardening; it does not change the off-chain custody of the secret.
+
+**super_admin sees counts, not faces.** The `country` column is plaintext, so
+super_admin (and global_admins) read per-chapter COUNTS via `/api/v2/global/stats`
+without holding the secret key. super_admin is deliberately excluded from the
+grant and the sealed entries — it onboards admins but cannot decrypt faces.
+
+**Least privilege:** the country CK is unwrapped NON-extractable (encrypt/decrypt
+only); only the global box secret is unwrapped extractable, because its raw 32
+bytes must rebuild the nacl keypair.
+
+**Open follow-ups (tracked):**
+- *Multi-admin enrollment.* A second global_admin cannot self-init (no secret).
+  Enrollment uses an ephemeral sealed handshake between global_admins (newcomer
+  publishes an ephemeral box public key; an existing admin seals the secret to it;
+  the newcomer re-wraps under their own wallet KEK). super_admin cannot be the
+  escrow because it must not read faces.
+- *Re-keying* on ambassador/global_admin removal (rotate CK / box keypair, re-encrypt).
+
 ## References
 
 - Spec: `docs/specs/member-vault-platform.md`
