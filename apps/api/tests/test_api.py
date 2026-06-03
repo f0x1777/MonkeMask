@@ -203,7 +203,10 @@ def test_flip_mirrors_pixels_and_is_its_own_inverse(client):
     photo = client.app.state.sessions.path(sid) / "photo"
 
     def pixels():
-        return np.asarray(Image.open(photo).convert("RGB"))
+        # Close the file handle immediately so Windows doesn't keep the photo locked
+        # (which would make the next /api/flip overwrite fail) — keeps CI non-flaky.
+        with Image.open(photo) as im:
+            return np.asarray(im.convert("RGB"))
 
     original = pixels()
     client.post("/api/flip", json={"session": sid})
