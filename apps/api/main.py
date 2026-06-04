@@ -198,7 +198,7 @@ async def compose(payload: dict):
         scale = float(a.get("scale", 1.0))
         scale = min(4.0, max(0.25, scale))  # clamp to a sane range
         rot = float(a.get("rot", 0.0)) % 360  # extra manual rotation, degrees
-        offsets.append((float(a.get("dx", 0)), float(a.get("dy", 0)), scale, rot))
+        offsets.append((float(a.get("dx", 0)), float(a.get("dy", 0)), scale, rot, bool(a.get("flip", False))))
 
     png = service.compose(store.path(sid) / "photo", pairs, offsets=offsets)
     # Keep the session so the user can nudge a monke and re-compose; it is deleted

@@ -19,6 +19,8 @@ from monkepic.types import Placement
 # the CLI.
 
 _THUMB = 128
+# Version-safe horizontal-flip transpose constant (Pillow moved it under Image.Transpose).
+_FLIP_LR = getattr(getattr(Image, "Transpose", Image), "FLIP_LEFT_RIGHT")
 
 
 def _png_b64(img: Image.Image) -> str:
@@ -95,6 +97,11 @@ def compose(photo_path: str | Path, pairs, *, margin: float = 1.0,
     uncovered."""
     canvas = load_image(photo_path).convert("RGBA")
     monkes = [ensure_transparent(load_image(mp)) for _, mp in pairs]
+    # Per-monke horizontal flip (offset[4]) to mirror a monke's orientation.
+    if offsets:
+        for i, off in enumerate(offsets):
+            if len(off) > 4 and off[4]:
+                monkes[i] = monkes[i].transpose(_FLIP_LR)
     placements = [placement_for(r, m, margin=margin, rotate=rotate)
                   for (r, _), m in zip(pairs, monkes)]
     faces = [(r.x, r.y, r.w, r.h) for r, _ in pairs]
