@@ -80,6 +80,33 @@ def test_full_flow_detect_monkes_compose(client):
     assert not client.app.state.sessions.exists(sid)
 
 
+def test_compose_per_monke_flip_mirrors_the_monke(client):
+    sid = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")}).json()["session"]
+    # An asymmetric monke: left half red, right half blue (opaque), so a mirror is visible.
+    arr = np.zeros((40, 40, 4), dtype=np.uint8)
+    arr[:, :20] = [255, 0, 0, 255]
+    arr[:, 20:] = [0, 0, 255, 255]
+    buf = io.BytesIO()
+    Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+    mid = client.post(
+        "/api/monkes", data={"session": sid}, files=[("files", ("m.png", buf.getvalue(), "image/png"))]
+    ).json()["monkes"][0]["id"]
+
+    def composed(flip):
+        r = client.post(
+            "/api/compose",
+            json={"session": sid, "assignments": [{"face_index": 0, "monke_id": mid, "flip": flip}]},
+        )
+        assert r.status_code == 200
+        return np.array(Image.open(io.BytesIO(r.content)).convert("RGB"))
+
+    no, fl = composed(False), composed(True)
+    # Face 0 is at (20,20,80,80); sample left-of-centre (~40,60). Flipping swaps red<->blue.
+    lx, ly = 40, 60
+    assert no[ly, lx][0] > no[ly, lx][2]  # left is red-dominant without flip
+    assert fl[ly, lx][2] > fl[ly, lx][0]  # left is blue-dominant with flip
+
+
 def test_recompose_with_offset_keeps_session(client):
     r = client.post("/api/detect", files={"photo": ("p.png", _photo_bytes(), "image/png")})
     sid = r.json()["session"]

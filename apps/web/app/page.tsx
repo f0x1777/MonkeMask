@@ -23,7 +23,7 @@ export default function Home() {
   const [monkes, setMonkes] = useState<Monke[]>([]);
   const [assign, setAssign] = useState<Record<number, string>>({});
   const [offsets, setOffsets] =
-    useState<Record<number, { dx: number; dy: number; scale: number; rot: number }>>({});
+    useState<Record<number, { dx: number; dy: number; scale: number; rot: number; flip?: boolean }>>({});
   const [selectedFace, setSelectedFace] = useState<number | null>(null);
   const [selectedMonke, setSelectedMonke] = useState<string | null>(null);
   // Live preview: cutouts + base placements (server) edited locally; the heavy
@@ -192,7 +192,7 @@ export default function Home() {
   function buildAssignments(assignMap: Record<number, string>, off: typeof offsets) {
     return Object.entries(assignMap).map(([fi, mid]) => {
       const o = off[Number(fi)] || { dx: 0, dy: 0, scale: 1, rot: 0 };
-      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy, scale: o.scale, rot: o.rot };
+      return { face_index: Number(fi), monke_id: mid, dx: o.dx, dy: o.dy, scale: o.scale, rot: o.rot, flip: !!o.flip };
     });
   }
 
@@ -280,6 +280,14 @@ export default function Home() {
     setOffsets((o) => {
       const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
       return { ...o, [faceIndex]: { ...cur, rot: cur.rot + deg } };
+    });
+  }
+
+  // Mirror a single monke horizontally (change its orientation), independent of the photo.
+  function flipMonke(faceIndex: number) {
+    setOffsets((o) => {
+      const cur = o[faceIndex] || { dx: 0, dy: 0, scale: 1, rot: 0 };
+      return { ...o, [faceIndex]: { ...cur, flip: !cur.flip } };
     });
   }
 
@@ -549,7 +557,7 @@ export default function Home() {
                         top: cy,
                         width: w,
                         height: h,
-                        transform: `translate(-50%, -50%) rotate(${-(it.roll_deg + off.rot)}deg)`,
+                        transform: `translate(-50%, -50%) rotate(${-(it.roll_deg + off.rot)}deg) scaleX(${off.flip ? -1 : 1})`,
                         cursor: "grab",
                         outline: sel ? `2px dashed ${ui.accent}` : "none",
                         outlineOffset: 2,
@@ -565,7 +573,8 @@ export default function Home() {
             <p style={S.label}>
               <strong>Drag any monke</strong> on the image to move it (instant), or
               pick a face below and use the arrows (◀▲▼▶), <strong>－／＋</strong> to
-              resize, and <strong>⟲／⟳</strong> to rotate. Changes preview live —
+              resize, <strong>⟲／⟳</strong> to rotate, and <strong>🔁</strong> to mirror
+              the monke. Changes preview live —
               nothing is uploaded until you download.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
@@ -599,11 +608,18 @@ export default function Home() {
                     <span style={{ width: 1, height: 26, background: ui.panelBorder, margin: "0 2px" }} />
                     <button style={S.arrow} onClick={() => rotate(f.index, -10)} title="rotate left">⟲</button>
                     <button style={S.arrow} onClick={() => rotate(f.index, 10)} title="rotate right">⟳</button>
-                    {(offsets[f.index]?.dx || offsets[f.index]?.dy || (offsets[f.index]?.scale ?? 1) !== 1 || offsets[f.index]?.rot) ? (
+                    <button
+                      style={{ ...S.arrow, background: offsets[f.index]?.flip ? ui.accent : ui.panel, color: offsets[f.index]?.flip ? ui.accentText : ui.ivory }}
+                      onClick={() => flipMonke(f.index)}
+                      title="mirror this monke"
+                    >
+                      🔁
+                    </button>
+                    {(offsets[f.index]?.dx || offsets[f.index]?.dy || (offsets[f.index]?.scale ?? 1) !== 1 || offsets[f.index]?.rot || offsets[f.index]?.flip) ? (
                       <button
                         style={S.arrow}
                         title="reset this monke"
-                        onClick={() => setOffsets((o) => ({ ...o, [f.index]: { dx: 0, dy: 0, scale: 1, rot: 0 } }))}
+                        onClick={() => setOffsets((o) => ({ ...o, [f.index]: { dx: 0, dy: 0, scale: 1, rot: 0, flip: false } }))}
                       >
                         ✕
                       </button>
